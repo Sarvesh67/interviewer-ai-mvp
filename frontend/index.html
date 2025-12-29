@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>AI Interviewer</title>
+</head>
+
+<body style="font-family: Arial; max-width: 700px; margin: auto;">
+
+  <h2>AI Interviewer</h2>
+
+  <!-- Resume Upload -->
+  <div id="resumeSection">
+    <input type="file" id="resumeFile" />
+    <button onclick="startInterview()">Start Interview</button>
+  </div>
+
+  <!-- Interview Section -->
+  <div id="interviewSection" style="display:none; margin-top:20px;">
+
+    <!-- Avatar + Question -->
+    <div style="display:flex; align-items:center; gap:20px;">
+      <img src="assets/avatar.png" width="120" />
+      <div>
+        <b>Interviewer:</b>
+        <p id="questionText"></p>
+      </div>
+    </div>
+
+    <br>
+
+    <!-- Controls -->
+    <button id="startBtn" onclick="startRecording()">Start Recording</button>
+    <button id="stopBtn" onclick="stopRecording()">Stop & Submit</button>
+
+
+    <p id="status"></p>
+
+    <p><b>Your Answer (Transcript):</b></p>
+    <p id="transcript" style="color:green;"></p>
+
+  </div>
+
+<script>
+let recorder;
+let audioChunks = [];
+let interviewOver = false;
+
+// 🔊 SPEAK FUNCTION (YOU DON'T NEED TO EDIT THIS)
+function speak(text) {
+  if (!window.speechSynthesis) return;
+
+  const msg = new SpeechSynthesisUtterance(text);
+  msg.lang = "en-US";
+  msg.rate = 1;
+  msg.pitch = 1;
+
+  window.speechSynthesis.cancel();
+  window.speechSynthesis.speak(msg);
+}
+
+// 📄 START INTERVIEW
+async function startInterview() {
+  const file = document.getElementById("resumeFile").files[0];
+  if (!file) {
+    alert("Please upload resume first");
+    return;
+  }
+
+  const form = new FormData();
+  form.append("file", file);
+
+  const res = await fetch("http://127.0.0.1:8000/start_interview", {
+    method: "POST",
+    body: form
+  });
+
+  const data = await res.json();
+
+  document.getElementById("resumeSection").style.display = "none";
+  document.getElementById("interviewSection").style.display = "block";
+
+  document.getElementById("questionText").innerText = data.question;
+  speak(data.question);
+}
+
+// 🎙️ START RECORDING
+async function startRecording() {
+  if (interviewOver) return;
+
+  audioChunks = [];
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+  recorder = new MediaRecorder(stream);
+  recorder.start();
+
+  recorder.ondataavailable = e => audioChunks.push(e.data);
+
+  document.getElementById("status").innerText = "Recording...";
+}
+
+// ⏹️ STOP & SUBMIT
+async function stopRecording() {
+  if (interviewOver) return;
+
+  recorder.stop();
+
+  recorder.onstop = async () => {
+    document.getElementById("status").innerText = "Processing...";
+
+    const audioBlob = new Blob(audioChunks, { type: "audio/wav" });
+    const form = new FormData();
+    form.append("audio", audioBlob);
+
+    const res = await fetch("http://127.0.0.1:8000/answer_audio", {
+      method: "POST",
+      body: form
+    });
+
+    const data = await res.json();
+
+    document.getElementById("transcript").innerText = data.transcript || "";
+
+    if (data.done) {
+    interviewOver = true;
+
+    document.getElementById("questionText").innerText = data.message;
+    speak(data.message);
+
+  // 🔒 Hide controls
+    document.getElementById("startBtn").style.display = "none";
+    document.getElementById("stopBtn").style.display = "none";
+
+    document.getElementById("status").innerText = "";
+  return;
+    } else {
+    document.getElementById("questionText").innerText = data.next_question;
+    speak(data.next_question);
+    }
+
+    document.getElementById("status").innerText = "";
+  };
+}
+</script>
+
+</body>
+</html>

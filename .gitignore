@@ -1,0 +1,10 @@
+# Python
+venv/
+__pycache__/
+
+# Uploaded files
+uploads/*.wav
+uploads/*.txt
+
+# Environment variables
+.env
