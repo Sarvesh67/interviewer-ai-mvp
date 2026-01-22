@@ -91,9 +91,15 @@ curl -X POST "http://localhost:8000/api/v1/interviews/{interview_id}/start-realt
 
 **Option A: Use the Frontend (Easiest)**
 
+Start frontend server (from repo root)
+```
+cd frontend/
+python3 -m http.server 8080
+```
+
 Open in browser:
 ```
-http://localhost:8000/frontend/realtime_interview.html?interview_id={interview_id}
+http://localhost:8080/realtime_interview.html?interview_id={interview_id}
 ```
 
 Or use the `candidate_join_url` directly.

@@ -10,3 +10,4 @@ uploads/*.txt
 .env
 interview_*.json
 interview_store/
+env_template.txt
