@@ -16,12 +16,14 @@ class TechnicalInterviewSession:
     
     def __init__(
         self,
-        avatar_id: str,
+        avatar_id: Optional[str],
+        avatar_image_path: Optional[str],
         job_description: Dict,
         questions: List[Dict],
         candidate_info: Dict
     ):
         self.avatar_id = avatar_id
+        self.avatar_image_path = avatar_image_path
         self.job_description = job_description
         self.questions = questions
         self.candidate_info = candidate_info
@@ -173,17 +175,30 @@ We'll review your responses and get back to you soon. Have a great day!"""
 #     from livekit.plugins import hedra
 #     from livekit.plugins import openai
 #     
+#     # Create AgentSession with STT, VAD, LLM, TTS
+#     agent_session = agents.AgentSession(
+#         stt=openai.STT(model="whisper-1"),
+#         vad=agents.vad.VAD.load(),
+#         llm=openai.LLM(model="gpt-4o-mini"),
+#         tts=openai.TTS(),
+#     )
+#     
+#     # Create Agent with instructions
+#     agent = agents.Agent(
+#         instructions="You are a technical interviewer..."
+#     )
+#     
+#     # Start the agent session
+#     await agent_session.start(agent=agent, room=ctx.room)
+#     
+#     # Setup Hedra avatar
 #     avatar = hedra.AvatarSession(
 #         avatar_id=avatar_id,
 #         avatar_participant_name="technical-interviewer"
 #     )
 #     
-#     agent = agents.AgentSession(
-#         stt=openai.STT(model="whisper-1"),
-#         llm=openai.LLM(model="gpt-4o-mini"),
-#         tts=openai.TTS(),
-#     )
+#     # Start Hedra avatar with the agent session
+#     await avatar.start(agent_session, room=ctx.room)
 #     
-#     await avatar.start(agent.session, room=ctx.room)
-#     return agent, avatar
+#     return agent_session, avatar
 

@@ -94,10 +94,11 @@ def test_question_generation():
         
         print("Generating test questions...")
         domain = extract_domain_knowledge(test_job_desc)
-        questions = generate_technical_questions(domain, difficulty_level="intermediate", num_questions=3)
+        num_questions=3
+        questions = generate_technical_questions(domain, difficulty_level="intermediate", num_questions=num_questions)
         
         print(f"✅ Generated {len(questions)} questions!")
-        for i, q in enumerate(questions[:2], 1):
+        for i, q in enumerate(questions[:num_questions], 1):
             print(f"   {i}. {q.get('question', 'N/A')[:60]}...")
         return True
         
@@ -122,12 +123,12 @@ def main():
     
     # Test domain extraction
     if not test_domain_extraction():
-        print("\n⚠️  Domain extraction test failed. Check Gemini API key.")
+        print("\n⚠️  Domain extraction test failed.")
         sys.exit(1)
     
     # Test question generation
     if not test_question_generation():
-        print("\n⚠️  Question generation test failed. Check Gemini API key.")
+        print("\n⚠️  Question generation test failed.")
         sys.exit(1)
     
     print("\n" + "=" * 60)

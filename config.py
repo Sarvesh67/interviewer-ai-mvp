@@ -4,47 +4,112 @@ Handles API keys and settings for all providers
 """
 import os
 from typing import Optional
-from pydantic_settings import BaseSettings
+
+# Load .env file explicitly
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    # dotenv not installed, but pydantic-settings will still read .env
+    pass
+
+# Import BaseSettings - supports both pydantic-settings v1 and v2
+try:
+    from pydantic_settings import BaseSettings, SettingsConfigDict
+    HAS_SETTINGS_CONFIG = True
+except ImportError:
+    try:
+        from pydantic_settings import BaseSettings
+        HAS_SETTINGS_CONFIG = False
+    except ImportError:
+        raise ImportError(
+            "pydantic-settings is required. Install it with: pip install pydantic-settings"
+        )
 
 
-class Settings(BaseSettings):
-    """Application settings with API keys"""
-    
-    # Hedra API Configuration
-    HEDRA_API_KEY: Optional[str] = None
-    HEDRA_API_URL: str = "https://api.hedra.com/web-app/public"
-    
-    # Google Gemini API Configuration
-    GEMINI_API_KEY: Optional[str] = None
-    GEMINI_MODEL: str = "gemini-2.0-flash-exp"  # Using latest available model
-    
-    # Anthropic Claude API Configuration
-    ANTHROPIC_API_KEY: Optional[str] = None
-    CLAUDE_MODEL: str = "claude-3-5-sonnet-20241022"  # Better reasoning for scoring
-    
-    # LiveKit Configuration
-    LIVEKIT_URL: Optional[str] = None
-    LIVEKIT_API_KEY: Optional[str] = None
-    LIVEKIT_API_SECRET: Optional[str] = None
-    
-    # OpenAI Configuration (for STT/TTS if needed)
-    OPENAI_API_KEY: Optional[str] = None
-    
-    # Deepgram Configuration (Alternative STT)
-    DEEPGRAM_API_KEY: Optional[str] = None
-    
-    # ElevenLabs Configuration (Alternative TTS)
-    ELEVENLABS_API_KEY: Optional[str] = None
-    
-    # Application Settings
-    UPLOAD_DIR: str = "uploads"
-    MAX_INTERVIEW_DURATION_MINUTES: int = 45
-    DEFAULT_DIFFICULTY_LEVEL: str = "intermediate"  # junior, intermediate, senior
-    
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        case_sensitive = True
+# Create Settings class with appropriate config
+if HAS_SETTINGS_CONFIG:
+    # Pydantic-settings v2 syntax
+    class Settings(BaseSettings):
+        """Application settings with API keys"""
+        
+        model_config = SettingsConfigDict(
+            env_file=".env",
+            env_file_encoding="utf-8",
+            case_sensitive=True,
+            extra="ignore"
+        )
+        
+        # Hedra API Configuration
+        HEDRA_API_KEY: Optional[str] = None
+        HEDRA_API_URL: str = "https://api.hedra.com/web-app/public"
+        
+        # Google Gemini API Configuration
+        GEMINI_API_KEY: Optional[str] = None
+        GEMINI_MODEL: str = "gemini-1.5-flash"  # Using stable model (or gemini-2.0-flash if available)
+        
+        # Anthropic Claude API Configuration
+        ANTHROPIC_API_KEY: Optional[str] = None
+        CLAUDE_MODEL: str = "claude-3-5-sonnet-20241022"  # Better reasoning for scoring
+        
+        # LiveKit Configuration
+        LIVEKIT_URL: Optional[str] = None
+        LIVEKIT_API_KEY: Optional[str] = None
+        LIVEKIT_API_SECRET: Optional[str] = None
+        
+        # OpenAI Configuration (for STT/TTS if needed)
+        OPENAI_API_KEY: Optional[str] = None
+        
+        # Deepgram Configuration (Alternative STT)
+        DEEPGRAM_API_KEY: Optional[str] = None
+        
+        # ElevenLabs Configuration (Alternative TTS)
+        ELEVENLABS_API_KEY: Optional[str] = None
+        
+        # Application Settings
+        UPLOAD_DIR: str = "uploads"
+        MAX_INTERVIEW_DURATION_MINUTES: int = 45
+        DEFAULT_DIFFICULTY_LEVEL: str = "intermediate"  # junior, intermediate, senior
+else:
+    # Pydantic-settings v1 syntax
+    class Settings(BaseSettings):
+        """Application settings with API keys"""
+        
+        class Config:
+            env_file = ".env"
+            env_file_encoding = "utf-8"
+            case_sensitive = True
+        
+        # Hedra API Configuration
+        HEDRA_API_KEY: Optional[str] = None
+        HEDRA_API_URL: str = "https://api.hedra.com/web-app/public"
+        
+        # Google Gemini API Configuration
+        GEMINI_API_KEY: Optional[str] = None
+        GEMINI_MODEL: str = "gemini-1.5-flash"  # Using stable model (or gemini-2.0-flash if available)
+        
+        # Anthropic Claude API Configuration
+        ANTHROPIC_API_KEY: Optional[str] = None
+        CLAUDE_MODEL: str = "claude-3-5-sonnet-20241022"  # Better reasoning for scoring
+        
+        # LiveKit Configuration
+        LIVEKIT_URL: Optional[str] = None
+        LIVEKIT_API_KEY: Optional[str] = None
+        LIVEKIT_API_SECRET: Optional[str] = None
+        
+        # OpenAI Configuration (for STT/TTS if needed)
+        OPENAI_API_KEY: Optional[str] = None
+        
+        # Deepgram Configuration (Alternative STT)
+        DEEPGRAM_API_KEY: Optional[str] = None
+        
+        # ElevenLabs Configuration (Alternative TTS)
+        ELEVENLABS_API_KEY: Optional[str] = None
+        
+        # Application Settings
+        UPLOAD_DIR: str = "uploads"
+        MAX_INTERVIEW_DURATION_MINUTES: int = 45
+        DEFAULT_DIFFICULTY_LEVEL: str = "intermediate"  # junior, intermediate, senior
 
 
 # Global settings instance

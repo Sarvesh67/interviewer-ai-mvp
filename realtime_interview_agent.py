@@ -4,10 +4,11 @@ Handles live conversations with candidates through Hedra avatars
 """
 import asyncio
 import logging
+import os
 from typing import Optional
 from datetime import datetime
 
-from livekit import agents, rtc
+from livekit import agents
 from livekit.agents import (
     AutoSubscribe,
     JobContext,
@@ -16,11 +17,13 @@ from livekit.agents import (
     llm,
 )
 from livekit.plugins import (
-    openai,
+    google,
     deepgram,
-    elevenlabs,
-    silero,
+    elevenlabs
 )
+from pathlib import Path
+import json
+import re
 
 from config import settings
 from interview_session import TechnicalInterviewSession
@@ -42,7 +45,8 @@ class RealtimeInterviewAgent:
     ):
         self.session = interview_session
         self.ctx = ctx
-        self.agent: Optional[agents.VoiceAssistant] = None
+        self.agent_session: Optional[agents.AgentSession] = None
+        self.agent: Optional[agents.Agent] = None
         self.hedra_avatar = None
         self.current_answer_transcript = ""
         self.follow_up_count = 0
@@ -57,37 +61,33 @@ class RealtimeInterviewAgent:
                 stt = deepgram.STT(
                     language="en-US",
                     model="nova-2",
-                    smart_format=True
+                    smart_format=True,
+                    api_key=settings.DEEPGRAM_API_KEY
                 )
-            elif settings.OPENAI_API_KEY:
-                stt = openai.STT(model="whisper-1")
             else:
-                raise ValueError("Either DEEPGRAM_API_KEY or OPENAI_API_KEY must be configured")
+                raise ValueError("DEEPGRAM_API_KEY must be configured")
             
             # Initialize LLM for conversation
-            # Using Gemini for cost efficiency, fallback to OpenAI
-            if settings.GEMINI_API_KEY:
-                # Note: LiveKit may not have direct Gemini plugin, using OpenAI as fallback
-                # You may need to create a custom Gemini LLM plugin
-                llm_model = openai.LLM(
-                    model="gpt-4o-mini",  # Cost-effective option
-                    temperature=0.7
-                )
-            else:
-                llm_model = openai.LLM(
-                    model="gpt-4o-mini",
-                    temperature=0.7
-                )
+            # Using Gemini Flash for fast, cost-efficient conversations
+            if not settings.GEMINI_API_KEY:
+                raise ValueError("GEMINI_API_KEY must be configured for LLM")
+            
+            # Use Google Gemini LLM via livekit-plugins-google
+            llm_model = google.LLM(
+                model=settings.GEMINI_MODEL,  # e.g., "gemini-2.0-flash-exp"
+                api_key=settings.GEMINI_API_KEY,
+                temperature=0.7
+            )
             
             # Initialize TTS (Text-to-Speech)
             # Using ElevenLabs for better quality, fallback to Silero
             if settings.ELEVENLABS_API_KEY:
                 tts = elevenlabs.TTS(
-                    voice="Rachel",  # Professional female voice
-                    model="eleven_multilingual_v2"
+                    voice_id="SAz9YHcvj6GT2YYXdXww",  # Professional female voice
+                    api_key=settings.ELEVENLABS_API_KEY
                 )
             else:
-                tts = silero.TTS(voice="en_1")  # Free alternative
+                raise ValueError("ElevenLabs API key is required for TTS")
             
             # Create system prompt for interviewer persona
             persona = create_interviewer_persona(
@@ -116,16 +116,17 @@ class RealtimeInterviewAgent:
             
             full_persona = f"{persona}\n\n{interview_context}"
             
-            # Create voice assistant agent
-            self.agent = agents.VoiceAssistant(
-                vad=agents.vad.VAD.load(),  # Voice Activity Detection
+            # Create AgentSession with STT, VAD, LLM, TTS
+            self.agent_session = agents.AgentSession(
                 stt=stt,
+                turn_detection="stt",  # Voice Activity Detection
                 llm=llm_model,
                 tts=tts,
-                chat_ctx=llm.ChatContext().append(
-                    role="system",
-                    text=full_persona
-                ),
+            )
+            
+            # Create Agent with instructions (system prompt)
+            self.agent = agents.Agent(
+                instructions=full_persona,
             )
             
             # Setup Hedra avatar integration
@@ -133,32 +134,73 @@ class RealtimeInterviewAgent:
             # If plugin is not available, agent will work without avatar video
             try:
                 from livekit.plugins import hedra
+
+                def _looks_like_uuid(val: str) -> bool:
+                    return bool(re.fullmatch(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", val))
+
+                avatar_kwargs = {
+                    "avatar_participant_name": "technical-interviewer",
+                    "api_key": settings.HEDRA_API_KEY,
+                    "api_url": "https://api.hedra.com/public/livekit/v1/session",
+                }
+
+                # Prefer UUID avatar_id if provided; otherwise fall back to avatar_image (PIL Image)
+                if isinstance(self.session.avatar_id, str) and _looks_like_uuid(self.session.avatar_id):
+                    avatar_kwargs["avatar_id"] = self.session.avatar_id
+                else:
+                    avatar_image_path = getattr(self.session, "avatar_image_path", None)
+                    if not avatar_image_path:
+                        # default local image if not provided
+                        avatar_image_path = str(Path("frontend") / "assets" / "avatar.png")
+
+                    try:
+                        from PIL import Image
+                        if Path(avatar_image_path).exists():
+                            avatar_kwargs["avatar_image"] = Image.open(avatar_image_path)
+                        else:
+                            logger.warning(f"Avatar image not found at {avatar_image_path}; Hedra will be skipped")
+                    except Exception as e:
+                        logger.warning(f"Could not load avatar image for Hedra: {e}")
+
+                # Only create Hedra session if we have either avatar_id or avatar_image
+                if "avatar_id" in avatar_kwargs or "avatar_image" in avatar_kwargs:
+                    self.hedra_avatar = hedra.AvatarSession(**avatar_kwargs)
+                    logger.info("Hedra avatar configured")
+                else:
+                    logger.error("No valid avatar_id or avatar_image available; skipping Hedra avatar")
+                    raise ValueError(f"No valid avatar_id or avatar_image available. Error: {e}")
                 
-                self.hedra_avatar = hedra.AvatarSession(
-                    avatar_id=self.session.avatar_id,
-                    avatar_participant_name="technical-interviewer"
-                )
-                
-                # Start Hedra avatar
-                await self.hedra_avatar.start(
-                    self.agent.session,
-                    room=self.ctx.room
-                )
-                logger.info(f"Hedra avatar {self.session.avatar_id} started")
+                # Start Hedra avatar (after session is started)
+                # We'll do this after session.start()
+                logger.info(f"Hedra avatar metadata {self.session.avatar_id} configured")
             except ImportError:
                 logger.warning("Hedra plugin not available, running without avatar video")
             except Exception as e:
-                logger.warning(f"Could not start Hedra avatar: {e}, continuing without avatar")
+                logger.warning(f"Could not configure Hedra avatar: {e}, continuing without avatar")
             
-            # Start the agent
-            self.agent.start(ctx=self.ctx.room)
+            # Start the agent session with the agent
+            await self.agent_session.start(
+                agent=self.agent,
+                room=self.ctx.room
+            )
+            
+            # Start Hedra avatar after session is started
+            if self.hedra_avatar:
+                try:
+                    await self.hedra_avatar.start(
+                        self.agent_session,
+                        room=self.ctx.room
+                    )
+                    logger.info(f"Hedra avatar {self.session.avatar_id} started")
+                except Exception as e:
+                    logger.warning(f"Could not start Hedra avatar: {e}, continuing without avatar")
             
             # Start interview
             self.session.start_interview()
             
             # Send opening message
             opening = self.session.get_opening_message()
-            await self.agent.say(opening, allow_interruptions=False)
+            await self.agent_session.say(opening, allow_interruptions=False)
             
             # Ask first question
             await self._ask_current_question()
@@ -183,7 +225,7 @@ class RealtimeInterviewAgent:
         # Add context if helpful
         context = f"Question {self.session.current_question_idx + 1} of {len(self.session.questions)}: "
         
-        await self.agent.say(f"{context}{question_text}", allow_interruptions=True)
+        await self.agent_session.say(f"{context}{question_text}", allow_interruptions=True)
         self.follow_up_count = 0
         self.current_answer_transcript = ""
     
@@ -195,7 +237,7 @@ class RealtimeInterviewAgent:
         if self.session.needs_follow_up(transcript) and self.follow_up_count < self.max_follow_ups_per_question:
             self.follow_up_count += 1
             follow_up = self.session.get_follow_up_question(transcript)
-            await self.agent.say(follow_up, allow_interruptions=True)
+            await self.agent_session.say(follow_up, allow_interruptions=True)
         else:
             # Answer is complete, save it
             self.session.submit_answer(self.current_answer_transcript.strip())
@@ -211,14 +253,14 @@ class RealtimeInterviewAgent:
     async def _end_interview(self):
         """End the interview"""
         closing = self.session.get_closing_message()
-        await self.agent.say(closing, allow_interruptions=False)
+        await self.agent_session.say(closing, allow_interruptions=False)
         
         self.session.end_interview()
         
-        # Disconnect agent
+        # Disconnect agent session
         await asyncio.sleep(2)
-        if self.agent:
-            await self.agent.aclose()
+        if self.agent_session:
+            await self.agent_session.aclose()
         
         logger.info("Interview completed")
     
@@ -227,19 +269,36 @@ class RealtimeInterviewAgent:
         try:
             await self.setup()
             
-            # Listen for user speech and handle responses
-            @self.agent.on("user_speech_committed")
-            async def on_user_speech(msg: agents.VoiceAssistantUserMessage):
-                transcript = msg.content
+            # Listen for user input transcribed events
+            def on_user_input_transcribed(event: agents.UserInputTranscribedEvent):
+                transcript = event.transcript
                 logger.info(f"Candidate said: {transcript}")
-                await self._handle_answer(transcript)
+                asyncio.create_task(self._handle_answer(transcript))
+
+            self.agent_session.on("user_input_transcribed", on_user_input_transcribed)
             
-            # Keep agent running
-            await self.agent.aclose()
+            # Keep agent session running until closed
+            # The session will stay alive until explicitly closed or room disconnects
+            # We'll wait for the session to close naturally
+            try:
+                # Wait for close event
+                close_event = asyncio.Event()
+                
+                def on_close(event: agents.CloseEvent):
+                    close_event.set()
+
+                self.agent_session.on("close", on_close)
+                
+                await close_event.wait()
+            except asyncio.CancelledError:
+                pass
             
         except Exception as e:
             logger.error(f"Error running interview agent: {e}")
             raise
+        finally:
+            if self.agent_session:
+                await self.agent_session.aclose()
 
 
 async def entrypoint(ctx: JobContext):
@@ -248,6 +307,10 @@ async def entrypoint(ctx: JobContext):
     This is called when a participant joins the room
     """
     logger.info("Interview agent entrypoint called")
+
+    # Connect agent to room
+    await ctx.connect()
+    await ctx.wait_for_participant()
     
     # Get interview_id from room name
     interview_id = ctx.room.name
@@ -258,17 +321,8 @@ async def entrypoint(ctx: JobContext):
     interview_session = get_interview_session(interview_id)
     
     if not interview_session:
-        logger.error(f"Interview session not found for: {interview_id}")
-        # Try to get from main.py's interviews dict as fallback
-        try:
-            from main import interviews
-            if interview_id in interviews:
-                interview_session = interviews[interview_id]["session"]
-            else:
-                raise ValueError(f"Interview {interview_id} not found")
-        except Exception as e:
-            logger.error(f"Could not load interview session: {e}")
-            return
+        logger.error(f"Could not load interview session for: {interview_id}")
+        raise ValueError(f"Interview session not found for: {interview_id}")
     
     logger.info(f"Starting interview agent for interview: {interview_id}")
     
@@ -278,10 +332,46 @@ async def entrypoint(ctx: JobContext):
 
 
 if __name__ == "__main__":
+    # Validate and set LiveKit configuration from settings
+    # The LiveKit agents framework expects these as environment variables
+    if not settings.LIVEKIT_URL:
+        raise ValueError(
+            "LIVEKIT_URL is required. Please set it in your .env file.\n"
+            "Get your LiveKit URL from: https://cloud.livekit.io"
+        )
+    
+    if not settings.LIVEKIT_API_KEY:
+        raise ValueError(
+            "LIVEKIT_API_KEY is required. Please set it in your .env file.\n"
+            "Get your LiveKit API key from: https://cloud.livekit.io"
+        )
+    
+    if not settings.LIVEKIT_API_SECRET:
+        raise ValueError(
+            "LIVEKIT_API_SECRET is required. Please set it in your .env file.\n"
+            "Get your LiveKit API secret from: https://cloud.livekit.io"
+        )
+    
+    # Set environment variables for LiveKit agents framework
+    # (only if not already set, to allow override via environment)
+    if not os.getenv("LIVEKIT_URL"):
+        os.environ["LIVEKIT_URL"] = settings.LIVEKIT_URL
+    
+    if not os.getenv("LIVEKIT_API_KEY"):
+        os.environ["LIVEKIT_API_KEY"] = settings.LIVEKIT_API_KEY
+    
+    if not os.getenv("LIVEKIT_API_SECRET"):
+        os.environ["LIVEKIT_API_SECRET"] = settings.LIVEKIT_API_SECRET
+    
+    logger.info("LiveKit configuration loaded from settings")
+    
     # Run the agent worker
     cli.run_app(
         WorkerOptions(
             entrypoint_fnc=entrypoint,
+            ws_url=settings.LIVEKIT_URL,
+            api_key=settings.LIVEKIT_API_KEY,
+            api_secret=settings.LIVEKIT_API_SECRET,
         )
     )
 

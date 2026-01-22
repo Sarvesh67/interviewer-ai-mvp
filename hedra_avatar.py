@@ -2,20 +2,32 @@
 Hedra Avatar Creation and Management
 Handles avatar creation, persona setup, and session management
 """
-import requests
+import logging
 import os
 from typing import Optional, Dict
+
+import requests
 from config import settings
 from domain_extraction import get_technical_expertise_summary
+
+logger = logging.getLogger("hedra_avatar")
 
 
 def create_hedra_avatar(
     job_title: str,
     technical_expertise: str,
     avatar_image_path: Optional[str] = None
-) -> str:
+) -> Optional[str]:
     """
-    Create a Hedra avatar with technical expert persona
+    Create or select a Hedra avatar.
+
+    NOTE: Hedra's public APIs for avatar creation may vary by account/plan and can change.
+    The LiveKit Hedra plugin can work with either:
+    - a valid Hedra avatar UUID (avatar_id), OR
+    - a local PIL Image passed as avatar_image.
+
+    In this repository we treat avatar creation as best-effort. If we cannot create an
+    avatar UUID reliably, we return None and let the agent fall back to avatar_image.
     
     Args:
         job_title: Job title for the position
@@ -23,7 +35,7 @@ def create_hedra_avatar(
         avatar_image_path: Optional path to avatar image (if None, uses default)
         
     Returns:
-        avatar_id: Hedra avatar identifier
+        avatar_id: Hedra avatar UUID if available, else None.
     """
     if not settings.HEDRA_API_KEY:
         raise ValueError("HEDRA_API_KEY is not configured. Please set it in .env file")
@@ -35,7 +47,6 @@ def create_hedra_avatar(
     asset_id = None
     if avatar_image_path and os.path.exists(avatar_image_path):
         try:
-            # Create asset
             asset_response = requests.post(
                 f"{base_url}/assets",
                 headers={"X-API-Key": api_key}
@@ -52,39 +63,12 @@ def create_hedra_avatar(
                 )
                 upload_response.raise_for_status()
         except Exception as e:
-            print(f"Warning: Could not upload avatar image: {e}")
-            asset_id = None
-    
-    # Step 2: Create avatar with persona
-    # Note: Actual Hedra API endpoints may vary - adjust based on Hedra documentation
-    try:
-        avatar_data = {
-            "name": f"Technical Interviewer - {job_title}",
-            "persona": create_interviewer_persona(job_title, technical_expertise),
-            "asset_id": asset_id  # If image was uploaded
-        }
-        
-        avatar_response = requests.post(
-            f"{base_url}/avatars",
-            headers={
-                "X-API-Key": api_key,
-                "Content-Type": "application/json"
-            },
-            json=avatar_data
-        )
-        avatar_response.raise_for_status()
-        
-        avatar_id = avatar_response.json().get("avatar_id")
-        
-        if not avatar_id:
-            raise ValueError("Failed to get avatar_id from Hedra API response")
-        
-        return avatar_id
-        
-    except requests.exceptions.RequestException as e:
-        raise RuntimeError(f"Error creating Hedra avatar: {e}")
-    except Exception as e:
-        raise RuntimeError(f"Unexpected error creating avatar: {e}")
+            logger.warning(f"Could not upload Hedra asset (non-fatal): {e}")
+            raise ValueError(f"Could not upload Hedra asset: {e}")
+    else:
+    # No reliable public avatar-creation endpoint in this repo; return None so the agent
+    # can fall back to passing avatar_image directly to the Hedra LiveKit plugin.
+        return None
 
 
 def create_interviewer_persona(

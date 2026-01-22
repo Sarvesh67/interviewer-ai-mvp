@@ -9,7 +9,11 @@ from datetime import datetime
 
 from livekit import api, rtc
 from livekit.agents import JobContext
+# add this import at the top
+from livekit.protocol.room import CreateRoomRequest
 
+import json
+from pathlib import Path
 from config import settings
 from interview_session import TechnicalInterviewSession
 from realtime_interview_agent import RealtimeInterviewAgent
@@ -52,10 +56,12 @@ class RealtimeInterviewManager:
         try:
             # Create room
             room = await self.livekit_api.room.create_room(
-                name=interview_id,
-                empty_timeout=300,  # 5 minutes
-                max_participants=2,  # Candidate + Interviewer
-            )
+                CreateRoomRequest(
+                    name=interview_id,
+                    empty_timeout=300,  # 5 minutes
+                    max_participants=2  # Candidate + Interviewer
+    )
+)
             
             # Create access token for candidate
             candidate_token = api.AccessToken(
@@ -141,16 +147,33 @@ def get_interview_session_for_agent(interview_id: str) -> Optional[TechnicalInte
     return interview_data.get("session")
 
 
-# Global storage for active interviews (in production, use database)
-active_interviews: Dict[str, TechnicalInterviewSession] = {}
-
-
 def register_interview_session(interview_id: str, session: TechnicalInterviewSession):
     """Register interview session for agent access"""
-    active_interviews[interview_id] = session
+    PERSIST_DIR = Path("interview_store")
+    PERSIST_DIR.mkdir(exist_ok=True)
 
+    payload = {
+        "avatar_id": session.avatar_id,
+        "avatar_image_path": getattr(session, "avatar_image_path", None),
+        "job_description": session.job_description,
+        "questions": session.questions,
+        "candidate_info": session.candidate_info,
+    }
+    (PERSIST_DIR / f"{interview_id}.json").write_text(json.dumps(payload))
 
 def get_interview_session(interview_id: str) -> Optional[TechnicalInterviewSession]:
     """Get interview session by ID"""
-    return active_interviews.get(interview_id)
+    store_file = Path("interview_store") / f"{interview_id}.json"
+    if store_file.exists():
+        payload = json.loads(store_file.read_text())
+        interview_session = TechnicalInterviewSession(
+            avatar_id=payload.get("avatar_id"),
+            avatar_image_path=payload.get("avatar_image_path"),
+            job_description=payload["job_description"],
+            questions=payload["questions"],
+            candidate_info=payload["candidate_info"],
+        )
+        return interview_session
+    else:
+        raise ValueError(f"Interview session not found for: {interview_id}")    
 

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Live Technical Interview</title>
     <!-- LiveKit Client SDK -->
-    <script src="https://unpkg.com/livekit-client@latest/dist/livekit-client.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/livekit-client/dist/livekit-client.umd.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -264,26 +264,36 @@
                 const url = data.livekit_url;
                 
                 // LiveKit client is available as global 'LiveKit' or 'livekit'
-                const { Room, RoomEvent, createLocalTracks } = window.LiveKit || window.livekit;
-                
+                // ✅ CORRECT - LivekitClient (lowercase 'k')
+                const LivekitClient = window.LivekitClient;
+                const { Room, RoomEvent, createLocalTracks } = LivekitClient;
+
                 room = new Room({
                     adaptiveStream: true,
                     dynacast: true,
                 });
                 
                 // Handle remote tracks
+                // ✅ Fixed: Handle local + remote + detach properly
+                let remoteAudio = null;
+
                 room.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
-                    if (track.kind === 'video') {
-                        track.attach(remoteVideo);
-                    } else if (track.kind === 'audio') {
-                        const audioElement = new Audio();
-                        track.attach(audioElement);
-                        audioElement.play();
+                    if (track.kind === Track.Kind.Video) {
+                        track.attach(participant.identity === 'interviewer-agent' ? remoteVideo : localVideo);
+                    } else if (track.kind === Track.Kind.Audio) {
+                        const audioEl = new Audio();
+                        track.attach(audioEl);
+                        audioEl.play().catch(e => console.warn('Audio play failed:', e));
+                        if (participant.identity === 'interviewer-agent') remoteAudio = audioEl;
                     }
                 });
-                
+
                 room.on(RoomEvent.TrackUnsubscribed, (track) => {
                     track.detach();
+                    if (track.kind === Track.Kind.Audio && remoteAudio) {
+                        remoteAudio.pause();
+                        remoteAudio = null;
+                    }
                 });
                 
                 room.on(RoomEvent.ParticipantConnected, (participant) => {
@@ -298,14 +308,31 @@
                     connectBtn.classList.remove('hidden');
                     disconnectBtn.classList.add('hidden');
                 });
+
+                room.on(RoomEvent.ConnectionFailed, (error) => {
+                    showStatus(`Connection failed: ${error.message}`, 'error');
+                });
+
+                room.on(RoomEvent.Reconnected, () => {
+                    showStatus('Reconnected successfully', 'connected');
+                });
                 
                 // Connect to room
+                await room.prepareConnection(url, token);
                 await room.connect(url, token);
                 
                 // Get local video/audio
                 const localTracks = await createLocalTracks({
-                    audio: true,
-                    video: true,
+                    audio: { 
+                        echoCancellation: true,    // ✅ Remove echo
+                        noiseSuppression: true,    // ✅ Clean audio
+                        autoGainControl: true      // ✅ Better volume
+                    },
+                    video: {
+                        width: { ideal: 1280 },    // ✅ HD quality
+                        height: { ideal: 720 },
+                        frameRate: { ideal: 30 }   // ✅ Smooth
+                    }
                 });
                 
                 for (const track of localTracks) {

@@ -8,3 +8,5 @@ uploads/*.txt
 
 # Environment variables
 .env
+interview_*.json
+interview_store/

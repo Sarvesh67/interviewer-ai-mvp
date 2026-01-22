@@ -6,6 +6,7 @@ Hedra avatar, interview session, scoring, and reporting
 import os
 import uuid
 import json
+import logging
 from datetime import datetime
 from typing import Optional, Dict, List
 
@@ -22,6 +23,8 @@ from interview_session import TechnicalInterviewSession
 from answer_scoring import score_all_answers, calculate_overall_metrics
 from report_generator import generate_interview_report, format_report_for_display
 from realtime_interview_manager import RealtimeInterviewManager, register_interview_session
+
+logger = logging.getLogger("main")
 
 # ==================================================
 # App Setup
@@ -143,7 +146,7 @@ async def create_interview(request: InterviewRequest):
         )
         validate_questions(questions)
         
-        # Step 3: Create Hedra avatar
+        # Step 3: Prepare Hedra avatar inputs
         technical_expertise = get_technical_expertise_summary(domain_knowledge)
         
         try:
@@ -154,8 +157,7 @@ async def create_interview(request: InterviewRequest):
             )
         except Exception as e:
             # If avatar creation fails, continue without it (for testing)
-            print(f"Warning: Avatar creation failed: {e}")
-            avatar_id = f"avatar_{uuid.uuid4().hex[:8]}"
+            raise ValueError(f"Avatar creation failed: {e}")
         
         # Step 4: Create interview session
         job_desc_dict = {
@@ -172,6 +174,7 @@ async def create_interview(request: InterviewRequest):
         
         session = TechnicalInterviewSession(
             avatar_id=avatar_id,
+            avatar_image_path=request.avatar_image_path,
             job_description=job_desc_dict,
             questions=questions,
             candidate_info=candidate_info
@@ -189,6 +192,8 @@ async def create_interview(request: InterviewRequest):
         
         # Register session for real-time agent access
         register_interview_session(interview_id, session)
+
+        # Note: session persistence for the agent process is handled by register_interview_session()
         
         return {
             "interview_id": interview_id,
