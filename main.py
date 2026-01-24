@@ -15,10 +15,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from config import settings, validate_api_keys, get_missing_required_keys
+from config import settings, validate_api_keys, get_missing_required_keys, get_missing_realtime_keys
 from domain_extraction import extract_domain_knowledge, get_technical_expertise_summary
 from question_generator import generate_technical_questions, validate_questions
-from hedra_avatar import create_hedra_avatar, create_interviewer_persona
+from hedra_avatar import create_hedra_image_avatar, create_interviewer_persona
 from interview_session import TechnicalInterviewSession
 from answer_scoring import score_all_answers, calculate_overall_metrics
 from report_generator import generate_interview_report, format_report_for_display
@@ -102,11 +102,17 @@ def config_status():
     """Check API key configuration status"""
     status = validate_api_keys()
     missing = get_missing_required_keys()
+    missing_realtime = get_missing_realtime_keys()
     
     return {
         "api_keys_status": status,
         "missing_required_keys": missing,
-        "all_configured": len(missing) == 0
+        "all_configured": len(missing) == 0,
+        "realtime": {
+            "ready": len(missing_realtime) == 0,
+            "missing_keys": missing_realtime,
+            "note": "Real-time mode requires LiveKit + Gemini + Deepgram (STT) + ElevenLabs (TTS) with the current agent implementation."
+        }
     }
 
 
@@ -150,7 +156,7 @@ async def create_interview(request: InterviewRequest):
         technical_expertise = get_technical_expertise_summary(domain_knowledge)
         
         try:
-            avatar_id = create_hedra_avatar(
+            avatar_id = create_hedra_image_avatar(
                 job_title=request.job_title,
                 technical_expertise=technical_expertise,
                 avatar_image_path=request.avatar_image_path
@@ -407,6 +413,14 @@ async def start_realtime_interview(interview_id: str):
     candidate_info = interview["candidate_info"]
     
     try:
+        # Fail fast if real-time prerequisites are missing, otherwise the worker can join but never speak
+        missing_realtime = get_missing_realtime_keys()
+        if missing_realtime:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Real-time interview is not configured. Missing: {', '.join(missing_realtime)}. See /api/config/status for details."
+            )
+
         # Create LiveKit room manager
         manager = RealtimeInterviewManager()
         
@@ -432,6 +446,42 @@ async def start_realtime_interview(interview_id: str):
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error starting real-time interview: {str(e)}")
+
+
+@app.get("/api/v1/interviews/{interview_id}/realtime/participants")
+async def realtime_participants(interview_id: str):
+    """
+    Debug endpoint: list current LiveKit participants for the interview room.
+    Useful to confirm whether the agent/hedra participant actually joined.
+    """
+    if interview_id not in interviews:
+        raise HTTPException(status_code=404, detail="Interview not found")
+
+    missing_realtime = get_missing_realtime_keys()
+    if missing_realtime:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Real-time interview is not configured. Missing: {', '.join(missing_realtime)}."
+        )
+
+    manager = RealtimeInterviewManager()
+    try:
+        participants = await manager.livekit_api.room.list_participants(room=interview_id)
+        # livekit api returns protobuf-ish objects; normalize into JSON-friendly dicts
+        normalized = []
+        for p in participants.participants:
+            normalized.append(
+                {
+                    "identity": getattr(p, "identity", None),
+                    "name": getattr(p, "name", None),
+                    "state": getattr(p, "state", None),
+                    "joined_at": getattr(p, "joined_at", None),
+                    "metadata": getattr(p, "metadata", None),
+                }
+            )
+        return {"room": interview_id, "participants": normalized}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error listing participants: {str(e)}")
 
 
 if __name__ == "__main__":

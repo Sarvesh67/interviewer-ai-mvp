@@ -438,7 +438,7 @@ async def run_technical_interview(
     questions = generate_technical_questions(domain_knowledge, difficulty_level="intermediate")
     
     # Step 3: Create avatar
-    avatar_id = create_hedra_avatar(
+    avatar_id = create_hedra_image_avatar(
         job_title=job_description["title"],
         technical_expertise=domain_knowledge["domain_areas"][0]
     )

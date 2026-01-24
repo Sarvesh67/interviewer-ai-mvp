@@ -4,16 +4,37 @@ Handles avatar creation, persona setup, and session management
 """
 import logging
 import os
-from typing import Optional, Dict
+from pathlib import Path
+from typing import Optional, Dict, Any
 
 import requests
 from config import settings
-from domain_extraction import get_technical_expertise_summary
+from requests import Response
+from utils.constants import HEDRA_RESPONSE_ID_KEY
 
 logger = logging.getLogger("hedra_avatar")
 
 
-def create_hedra_avatar(
+def _default_avatar_image_path() -> str:
+    """
+    Default avatar image bundled with the repo.
+
+    We keep this in code (instead of relying on cwd) so it works regardless of where the
+    process is launched from.
+    """
+    repo_root = Path(__file__).resolve().parent
+    return str(repo_root / "frontend" / "assets" / "avatar.png")
+
+
+def _safe_json(response: Response) -> Dict[str, Any]:
+    try:
+        data = response.json()
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def create_hedra_image_avatar(
     job_title: str,
     technical_expertise: str,
     avatar_image_path: Optional[str] = None
@@ -43,32 +64,42 @@ def create_hedra_avatar(
     api_key = settings.HEDRA_API_KEY
     base_url = settings.HEDRA_API_URL
     
-    # Step 1: Create asset (if image provided)
-    asset_id = None
-    if avatar_image_path and os.path.exists(avatar_image_path):
-        try:
-            asset_response = requests.post(
-                f"{base_url}/assets",
-                headers={"X-API-Key": api_key}
-            )
-            asset_response.raise_for_status()
-            asset_id = asset_response.json().get("asset_id")
-            
-            # Upload image
-            with open(avatar_image_path, "rb") as f:
-                upload_response = requests.post(
-                    f"{base_url}/assets/{asset_id}/upload",
-                    headers={"X-API-Key": api_key},
-                    files={"file": f}
-                )
-                upload_response.raise_for_status()
-        except Exception as e:
-            logger.warning(f"Could not upload Hedra asset (non-fatal): {e}")
-            raise ValueError(f"Could not upload Hedra asset: {e}")
-    else:
-    # No reliable public avatar-creation endpoint in this repo; return None so the agent
-    # can fall back to passing avatar_image directly to the Hedra LiveKit plugin.
+    # Prefer caller-provided image; otherwise use the bundled default.
+    image_path = avatar_image_path or _default_avatar_image_path()
+    if not os.path.exists(image_path):
+        logger.warning(f"Avatar image not found at {image_path}; cannot create Hedra avatar_id")
         return None
+
+    # Hedra Create Asset requires JSON body with required fields `name` and `type`.
+    # Ref: https://www.hedra.com/docs/api-reference/public/create-asset?playground=open
+    request_body = {"name": "technical-interviewer", "type": "image"}
+    # Step 1: Create asset
+    asset_response = requests.post(
+        f"{base_url}/assets",
+        headers={"X-API-Key": api_key},
+        json=request_body,
+        timeout=30,
+    )
+    asset_response.raise_for_status()
+    asset_payload = _safe_json(asset_response)
+    asset_id = asset_payload.get(HEDRA_RESPONSE_ID_KEY)
+    if not asset_id:
+        raise ValueError(
+            "Hedra asset creation succeeded but response did not include an id field "
+            f"({HEDRA_RESPONSE_ID_KEY!r}"
+        )
+
+    # Step 2: Upload image into asset
+    with open(image_path, "rb") as f:
+        upload_response = requests.post(
+            f"{base_url}/assets/{asset_id}/upload",
+            headers={"X-API-Key": api_key},
+            files={"file": f},
+            timeout=60,
+        )
+    upload_response.raise_for_status()
+
+    return str(asset_id)
 
 
 def create_interviewer_persona(

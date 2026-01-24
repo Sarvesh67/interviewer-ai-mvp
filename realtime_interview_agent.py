@@ -29,6 +29,7 @@ from config import settings
 from interview_session import TechnicalInterviewSession
 from hedra_avatar import create_interviewer_persona
 from answer_scoring import score_candidate_answer
+from utils.string_utils import StringUtils
 
 logger = logging.getLogger("realtime_interview_agent")
 
@@ -135,18 +136,18 @@ class RealtimeInterviewAgent:
             try:
                 from livekit.plugins import hedra
 
-                def _looks_like_uuid(val: str) -> bool:
-                    return bool(re.fullmatch(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", val))
-
                 avatar_kwargs = {
                     "avatar_participant_name": "technical-interviewer",
                     "api_key": settings.HEDRA_API_KEY,
                     "api_url": "https://api.hedra.com/public/livekit/v1/session",
                 }
 
-                # Prefer UUID avatar_id if provided; otherwise fall back to avatar_image (PIL Image)
-                if isinstance(self.session.avatar_id, str) and _looks_like_uuid(self.session.avatar_id):
-                    avatar_kwargs["avatar_id"] = self.session.avatar_id
+                # Prefer avatar_id if provided; otherwise fall back to avatar_image (PIL Image).
+                #
+                # NOTE: The Hedra LiveKit plugin accepts any string avatar_id; it is not
+                # required to be UUID-shaped. We should not block valid Hedra IDs.
+                if StringUtils.looks_like_uuid(self.session.avatar_id) and self.session.avatar_id.strip():
+                    avatar_kwargs["avatar_id"] = self.session.avatar_id.strip()
                 else:
                     avatar_image_path = getattr(self.session, "avatar_image_path", None)
                     if not avatar_image_path:

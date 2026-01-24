@@ -150,12 +150,12 @@ def validate_api_keys() -> dict:
         "deepgram": {
             "configured": bool(settings.DEEPGRAM_API_KEY),
             "required": False,
-            "message": "Deepgram API key is optional (alternative STT)"
+            "message": "Deepgram API key is required for real-time STT in this repo's default agent implementation"
         },
         "elevenlabs": {
             "configured": bool(settings.ELEVENLABS_API_KEY),
             "required": False,
-            "message": "ElevenLabs API key is optional (alternative TTS)"
+            "message": "ElevenLabs API key is required for real-time TTS in this repo's default agent implementation"
         }
     }
     
@@ -169,5 +169,25 @@ def get_missing_required_keys() -> list:
     for provider, info in status.items():
         if info["required"] and not info["configured"]:
             missing.append(provider.upper())
+    return missing
+
+
+def get_missing_realtime_keys() -> list:
+    """
+    Real-time interview prerequisites.
+
+    NOTE: The current `realtime_interview_agent.py` requires Deepgram (STT) and ElevenLabs (TTS).
+    If you later implement fallbacks (e.g., OpenAI Whisper/Silero), update this list accordingly.
+    """
+    missing = []
+    # Baseline: everything needed to create/join rooms and run the agent conversation loop.
+    if not settings.LIVEKIT_URL or not settings.LIVEKIT_API_KEY or not settings.LIVEKIT_API_SECRET:
+        missing.append("LIVEKIT")
+    if not settings.GEMINI_API_KEY:
+        missing.append("GEMINI")
+    if not settings.DEEPGRAM_API_KEY:
+        missing.append("DEEPGRAM")
+    if not settings.ELEVENLABS_API_KEY:
+        missing.append("ELEVENLABS")
     return missing
 

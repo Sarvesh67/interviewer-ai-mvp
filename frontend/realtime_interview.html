@@ -273,32 +273,50 @@
                     dynacast: true,
                 });
                 
-                // Handle remote tracks
-                // ✅ Fixed: Handle local + remote + detach properly
-                let remoteAudio = null;
+                // Handle remote tracks (interviewer agent + Hedra avatar participant)
+                // Hedra plugin defaults to avatar_participant_name="technical-interviewer" in this repo.
+                const INTERVIEWER_IDENTITIES = new Set(['interviewer-agent', 'technical-interviewer']);
+                let remoteAudioEl = null;
 
                 room.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
-                    if (track.kind === Track.Kind.Video) {
-                        track.attach(participant.identity === 'interviewer-agent' ? remoteVideo : localVideo);
-                    } else if (track.kind === Track.Kind.Audio) {
-                        const audioEl = new Audio();
+                    const identity = participant?.identity || 'unknown';
+                    console.log('Track subscribed:', { kind: track.kind, identity });
+
+                    // Only attach REMOTE tracks to the remote elements.
+                    // Local tracks are attached when we create/publish them below.
+                    if (track.kind === "video") {
+                        if (INTERVIEWER_IDENTITIES.has(identity) || identity !== room.localParticipant.identity) {
+                            track.attach(remoteVideo);
+                        }
+                    } else if (track.kind === "audio") {
+                        // Browser autoplay policies can block audio until a user gesture.
+                        // Clicking "Connect" is a gesture, so this usually succeeds.
+                        const audioEl = document.createElement('audio');
+                        audioEl.autoplay = true;
+                        audioEl.playsInline = true;
+                        document.body.appendChild(audioEl);
                         track.attach(audioEl);
                         audioEl.play().catch(e => console.warn('Audio play failed:', e));
-                        if (participant.identity === 'interviewer-agent') remoteAudio = audioEl;
+
+                        // Keep a reference so we can stop it on unsubscribe
+                        if (INTERVIEWER_IDENTITIES.has(identity)) remoteAudioEl = audioEl;
                     }
                 });
 
-                room.on(RoomEvent.TrackUnsubscribed, (track) => {
+                room.on(RoomEvent.TrackUnsubscribed, (track, publication, participant) => {
+                    const identity = participant?.identity || 'unknown';
+                    console.log('Track unsubscribed:', { kind: track.kind, identity });
                     track.detach();
-                    if (track.kind === Track.Kind.Audio && remoteAudio) {
-                        remoteAudio.pause();
-                        remoteAudio = null;
+                    if (track.kind === "audio" && remoteAudioEl) {
+                        remoteAudioEl.pause();
+                        remoteAudioEl.remove();
+                        remoteAudioEl = null;
                     }
                 });
                 
                 room.on(RoomEvent.ParticipantConnected, (participant) => {
                     console.log('Participant connected:', participant.identity);
-                    if (participant.identity === 'interviewer-agent') {
+                    if (INTERVIEWER_IDENTITIES.has(participant.identity)) {
                         showStatus('Interviewer joined. Interview starting...', 'connected');
                     }
                 });
