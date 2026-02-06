@@ -35,8 +35,6 @@ def _safe_json(response: Response) -> Dict[str, Any]:
 
 
 def create_hedra_image_avatar(
-    job_title: str,
-    technical_expertise: str,
     avatar_image_path: Optional[str] = None
 ) -> Optional[str]:
     """

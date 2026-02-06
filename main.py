@@ -16,7 +16,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from config import settings, validate_api_keys, get_missing_required_keys, get_missing_realtime_keys
-from domain_extraction import extract_domain_knowledge, get_technical_expertise_summary
+from domain_extraction import extract_domain_knowledge
 from question_generator import generate_technical_questions, validate_questions
 from hedra_avatar import create_hedra_image_avatar, create_interviewer_persona
 from interview_session import TechnicalInterviewSession
@@ -152,13 +152,8 @@ async def create_interview(request: InterviewRequest):
         )
         validate_questions(questions)
         
-        # Step 3: Prepare Hedra avatar inputs
-        technical_expertise = get_technical_expertise_summary(domain_knowledge)
-        
         try:
             avatar_id = create_hedra_image_avatar(
-                job_title=request.job_title,
-                technical_expertise=technical_expertise,
                 avatar_image_path=request.avatar_image_path
             )
         except Exception as e:

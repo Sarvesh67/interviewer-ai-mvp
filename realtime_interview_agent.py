@@ -52,6 +52,8 @@ class RealtimeInterviewAgent:
         self.current_answer_transcript = ""
         self.follow_up_count = 0
         self.max_follow_ups_per_question = 2
+        self._answer_lock = asyncio.Lock()
+        self._awaiting_answer = False
         
     async def setup(self):
         """Setup the interview agent with Hedra avatar"""
@@ -81,10 +83,9 @@ class RealtimeInterviewAgent:
             )
             
             # Initialize TTS (Text-to-Speech)
-            # Using ElevenLabs for better quality, fallback to Silero
+            # Using ElevenLabs for better quality
             if settings.ELEVENLABS_API_KEY:
                 tts = elevenlabs.TTS(
-                    voice_id="SAz9YHcvj6GT2YYXdXww",  # Professional female voice
                     api_key=settings.ELEVENLABS_API_KEY
                 )
             else:
@@ -231,26 +232,34 @@ class RealtimeInterviewAgent:
         self.current_answer_transcript = ""
     
     async def _handle_answer(self, transcript: str):
-        """Handle candidate's answer"""
-        self.current_answer_transcript += " " + transcript
-        
-        # Check if we need follow-up
-        if self.session.needs_follow_up(transcript) and self.follow_up_count < self.max_follow_ups_per_question:
-            self.follow_up_count += 1
-            follow_up = self.session.get_follow_up_question(transcript)
-            await self.agent_session.say(follow_up, allow_interruptions=True)
-        else:
-            # Answer is complete, save it
+        transcript = (transcript or "").strip()
+        if not transcript:
+            return
+
+        async with self._answer_lock:
+            # If we've already advanced, ignore late transcripts
+            if not self._awaiting_answer:
+                return
+
+            self.current_answer_transcript += " " + transcript
+
+            if self.session.needs_follow_up(transcript) and self.follow_up_count < self.max_follow_ups_per_question:
+                self.follow_up_count += 1
+                follow_up = self.session.get_follow_up_question(transcript)
+                await self.agent_session.say(follow_up, allow_interruptions=True)
+                return
+
+            # Only advance once per question
+            self._awaiting_answer = False
+
             self.session.submit_answer(self.current_answer_transcript.strip())
-            
-            # Move to next question
+
             if not self.session.is_complete():
-                # Brief transition
                 await asyncio.sleep(1)
                 await self._ask_current_question()
             else:
                 await self._end_interview()
-    
+
     async def _end_interview(self):
         """End the interview"""
         closing = self.session.get_closing_message()
@@ -272,8 +281,14 @@ class RealtimeInterviewAgent:
             
             # Listen for user input transcribed events
             def on_user_input_transcribed(event: agents.UserInputTranscribedEvent):
-                transcript = event.transcript
-                logger.info(f"Candidate said: {transcript}")
+                # Ignore partial/empty events (LiveKit emits transcript="" with is_final=False on speech stop)
+                if not getattr(event, "is_final", False):
+                    return
+
+                transcript = (event.transcript or "").strip()
+                if not transcript:
+                    return
+
                 asyncio.create_task(self._handle_answer(transcript))
 
             self.agent_session.on("user_input_transcribed", on_user_input_transcribed)
