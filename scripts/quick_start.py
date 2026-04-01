@@ -40,7 +40,6 @@ def check_api_keys():
         print("\n📚 Get your API keys:")
         print("   - Hedra: https://hedra.com")
         print("   - Gemini: https://ai.google.dev")
-        print("   - Claude: https://console.anthropic.com")
         print("   - LiveKit: https://cloud.livekit.io")
         return False
     else:
@@ -54,7 +53,7 @@ def test_domain_extraction():
     print("=" * 60)
     
     try:
-        from domain_extraction import extract_domain_knowledge
+        from core.domain_extraction import extract_domain_knowledge
         
         test_job_desc = """
         Senior Backend Engineer
@@ -84,8 +83,8 @@ def test_question_generation():
     print("=" * 60)
     
     try:
-        from domain_extraction import extract_domain_knowledge
-        from question_generator import generate_technical_questions
+        from core.domain_extraction import extract_domain_knowledge
+        from core.question_generator import generate_technical_questions
         
         test_job_desc = """
         Senior Backend Engineer

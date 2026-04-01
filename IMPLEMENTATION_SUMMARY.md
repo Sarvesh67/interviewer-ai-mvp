@@ -71,7 +71,6 @@ pip install -r requirements.txt
 2. Fill in all required API keys:
    - `HEDRA_API_KEY` - From hedra.com
    - `GEMINI_API_KEY` - From ai.google.dev
-   - `ANTHROPIC_API_KEY` - From console.anthropic.com
    - `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` - From cloud.livekit.io
 
 ### Step 3: Verify Configuration
@@ -182,7 +181,7 @@ curl http://localhost:8000/api/v1/interviews/{interview_id}/report
 
 ### Issue: "Error scoring answers"
 **Solution**:
-1. Verify Claude API key is correct
+1. Verify Gemini API key is correct
 2. Check API rate limits
 3. Ensure answers are being submitted correctly
 

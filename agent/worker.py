@@ -19,16 +19,15 @@ from livekit.agents import (
 from livekit.plugins import (
     google,
     deepgram,
-    elevenlabs
 )
 from pathlib import Path
 import json
 import re
 
 from config import settings
-from interview_session import TechnicalInterviewSession
-from hedra_avatar import create_interviewer_persona
-from answer_scoring import score_candidate_answer
+from core.session import TechnicalInterviewSession
+from integrations.hedra import create_interviewer_persona, _default_avatar_image_path
+from core.answer_scoring import score_candidate_answer
 from utils.string_utils import StringUtils
 
 logger = logging.getLogger("realtime_interview_agent")
@@ -59,12 +58,17 @@ class RealtimeInterviewAgent:
         """Setup the interview agent with Hedra avatar"""
         try:
             # Initialize STT (Speech-to-Text)
-            # Using Deepgram for better accuracy, fallback to OpenAI Whisper
+            # Initialize TTS (Text-to-Speech)
+            # Using Deepgram for better accuracy
             if settings.DEEPGRAM_API_KEY:
                 stt = deepgram.STT(
                     language="en-US",
                     model="nova-2",
                     smart_format=True,
+                    api_key=settings.DEEPGRAM_API_KEY
+                )
+                tts = deepgram.TTS(
+                    model="aura-2-orpheus-en",
                     api_key=settings.DEEPGRAM_API_KEY
                 )
             else:
@@ -77,19 +81,9 @@ class RealtimeInterviewAgent:
             
             # Use Google Gemini LLM via livekit-plugins-google
             llm_model = google.LLM(
-                model=settings.GEMINI_MODEL,  # e.g., "gemini-2.0-flash-exp"
-                api_key=settings.GEMINI_API_KEY,
-                temperature=0.7
+                model=settings.GEMINI_FOLLOW_UP_MODEL,  # e.g., "gemini-2.0-flash-exp"
+                api_key=settings.GEMINI_API_KEY
             )
-            
-            # Initialize TTS (Text-to-Speech)
-            # Using ElevenLabs for better quality
-            if settings.ELEVENLABS_API_KEY:
-                tts = elevenlabs.TTS(
-                    api_key=settings.ELEVENLABS_API_KEY
-                )
-            else:
-                raise ValueError("ElevenLabs API key is required for TTS")
             
             # Create system prompt for interviewer persona
             persona = create_interviewer_persona(
@@ -153,7 +147,7 @@ class RealtimeInterviewAgent:
                     avatar_image_path = getattr(self.session, "avatar_image_path", None)
                     if not avatar_image_path:
                         # default local image if not provided
-                        avatar_image_path = str(Path("frontend") / "assets" / "avatar.png")
+                        avatar_image_path = _default_avatar_image_path()
 
                     try:
                         from PIL import Image
@@ -169,8 +163,7 @@ class RealtimeInterviewAgent:
                     self.hedra_avatar = hedra.AvatarSession(**avatar_kwargs)
                     logger.info("Hedra avatar configured")
                 else:
-                    logger.error("No valid avatar_id or avatar_image available; skipping Hedra avatar")
-                    raise ValueError(f"No valid avatar_id or avatar_image available. Error: {e}")
+                    logger.warning("No valid avatar_id or avatar_image available; skipping Hedra avatar")
                 
                 # Start Hedra avatar (after session is started)
                 # We'll do this after session.start()
@@ -245,8 +238,13 @@ class RealtimeInterviewAgent:
 
             if self.session.needs_follow_up(transcript) and self.follow_up_count < self.max_follow_ups_per_question:
                 self.follow_up_count += 1
-                follow_up = self.session.get_follow_up_question(transcript)
-                await self.agent_session.say(follow_up, allow_interruptions=True)
+                #follow_up = self.session.get_follow_up_question(transcript)
+                #await self.agent_session.say(follow_up, allow_interruptions=True)
+                await self.agent_session.generate_reply(
+                    user_input=transcript,
+                    instructions="You are an interviewer and you are asking a follow-up question to the candidate based on the transcript provided to you. Keep the follow-up question short and to the point.",
+                     allow_interruptions=True
+                    )
                 return
 
             # Only advance once per question
@@ -332,7 +330,7 @@ async def entrypoint(ctx: JobContext):
     interview_id = ctx.room.name
     
     # Fetch interview session
-    from realtime_interview_manager import get_interview_session
+    from agent.manager import get_interview_session
     
     interview_session = get_interview_session(interview_id)
     

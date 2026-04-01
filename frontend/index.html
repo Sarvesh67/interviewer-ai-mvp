@@ -1,147 +1,611 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>AI Interviewer</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="script-src 'self' https://accounts.google.com 'unsafe-inline'; style-src 'self' https://accounts.google.com 'unsafe-inline';">
+    <title>26Pixel - AI Technical Interviewer</title>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 700px;
+            width: 100%;
+            padding: 40px;
+        }
+
+        .brand {
+            text-align: center;
+            margin-bottom: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            color: #667eea;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+
+        h1 { color: #333; text-align: center; margin-bottom: 6px; font-size: 24px; }
+        .subtitle { color: #666; text-align: center; margin-bottom: 30px; font-size: 14px; }
+
+        /* Sign-in */
+        .signin-section {
+            text-align: center;
+            padding: 30px 0;
+            border-bottom: 1px solid #e9ecef;
+            margin-bottom: 30px;
+        }
+        .signin-section p { color: #666; margin-bottom: 16px; font-size: 14px; }
+        #g_id_onload_container { display: flex; justify-content: center; }
+
+        .user-info {
+            display: flex; align-items: center; justify-content: center; gap: 12px;
+            padding: 12px 20px; background: #d4edda; border-radius: 10px;
+            color: #155724; font-size: 14px;
+        }
+        .user-info .avatar {
+            width: 36px; height: 36px; border-radius: 50%;
+            background: #155724; color: white;
+            display: flex; align-items: center; justify-content: center;
+            font-weight: 600; font-size: 14px; flex-shrink: 0;
+        }
+
+        /* Dashboard */
+        .dashboard { display: none; margin-bottom: 30px; }
+        .dashboard.visible { display: block; }
+        .dashboard h2 { font-size: 18px; color: #333; margin-bottom: 14px; }
+
+        .interview-card {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 14px 16px; border: 1px solid #e9ecef; border-radius: 10px;
+            margin-bottom: 10px; transition: border-color 0.2s;
+        }
+        .interview-card:hover { border-color: #667eea; }
+
+        .interview-card .info { flex: 1; min-width: 0; }
+        .interview-card .title {
+            font-weight: 600; color: #333; font-size: 14px;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .interview-card .meta { font-size: 12px; color: #999; margin-top: 2px; }
+
+        .badge {
+            display: inline-block; padding: 2px 8px; border-radius: 4px;
+            font-size: 11px; font-weight: 600; text-transform: uppercase;
+            margin-left: 8px;
+        }
+        .badge.created { background: #e9ecef; color: #666; }
+        .badge.in_progress { background: #fff3cd; color: #856404; }
+        .badge.completed { background: #d4edda; color: #155724; }
+
+        .interview-card .actions { display: flex; gap: 8px; flex-shrink: 0; margin-left: 12px; }
+
+        .btn-sm {
+            padding: 6px 14px; border: none; border-radius: 6px;
+            font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s;
+        }
+        .btn-sm:hover { transform: translateY(-1px); box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
+        .btn-resume { background: #667eea; color: white; }
+        .btn-resume:hover { background: #5568d3; }
+        .btn-report { background: #28a745; color: white; }
+        .btn-report:hover { background: #218838; }
+
+        .empty-state { text-align: center; color: #999; padding: 20px 0; font-size: 14px; }
+
+        .section-divider {
+            display: flex; align-items: center; gap: 12px;
+            margin-bottom: 20px; cursor: pointer; user-select: none;
+        }
+        .section-divider h2 { font-size: 18px; color: #333; white-space: nowrap; }
+        .section-divider .line { flex: 1; height: 1px; background: #e9ecef; }
+        .section-divider .toggle { font-size: 12px; color: #667eea; }
+
+        /* Form */
+        .form-section { display: none; }
+        .form-section.visible { display: block; }
+
+        .form-group { margin-bottom: 20px; }
+        .form-group label { display: block; margin-bottom: 6px; font-weight: 600; color: #333; font-size: 14px; }
+        .form-group label .required { color: #e74c3c; }
+
+        .form-group input,
+        .form-group textarea,
+        .form-group select {
+            width: 100%; padding: 10px 14px; border: 2px solid #e9ecef;
+            border-radius: 8px; font-size: 14px; font-family: inherit;
+            transition: border-color 0.2s; background: white;
+        }
+        .form-group input:focus,
+        .form-group textarea:focus,
+        .form-group select:focus { outline: none; border-color: #667eea; }
+        .form-group textarea { min-height: 140px; resize: vertical; }
+        .form-group .hint { font-size: 12px; color: #999; margin-top: 4px; }
+
+        .submit-btn {
+            width: 100%; padding: 14px; background: #667eea; color: white;
+            border: none; border-radius: 8px; font-size: 16px; font-weight: 600;
+            cursor: pointer; transition: all 0.3s;
+        }
+        .submit-btn:hover:not(:disabled) {
+            background: #5568d3; transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+        }
+        .submit-btn:disabled { background: #b0b8d6; cursor: not-allowed; transform: none; }
+
+        .status {
+            padding: 12px; border-radius: 8px; margin-bottom: 20px;
+            text-align: center; font-size: 14px; display: none;
+        }
+        .status.visible { display: block; }
+        .status.loading { background: #fff3cd; color: #856404; }
+        .status.error { background: #f8d7da; color: #721c24; }
+        .status.success { background: #d4edda; color: #155724; }
+
+        .spinner {
+            display: inline-block; width: 14px; height: 14px;
+            border: 2px solid #856404; border-top-color: transparent;
+            border-radius: 50%; animation: spin 0.8s linear infinite;
+            vertical-align: middle; margin-right: 6px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Loading overlay */
+        .loading-overlay {
+            display: none; position: fixed; inset: 0; z-index: 1000;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            align-items: center; justify-content: center; flex-direction: column;
+        }
+        .loading-overlay.visible { display: flex; }
+
+        .loading-card {
+            background: white; border-radius: 24px; padding: 48px 40px;
+            max-width: 480px; width: 90%; text-align: center;
+            box-shadow: 0 25px 80px rgba(0,0,0,0.3);
+            animation: slideUp 0.5s ease-out;
+        }
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(30px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .loading-brand { font-size: 12px; font-weight: 600; color: #667eea; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 24px; }
+
+        .loading-spinner {
+            width: 56px; height: 56px; margin: 0 auto 28px;
+            border: 4px solid #e9ecef; border-top-color: #667eea;
+            border-radius: 50%; animation: spin 1s linear infinite;
+        }
+
+        .loading-title { font-size: 20px; font-weight: 700; color: #333; margin-bottom: 8px; }
+        .loading-subtitle { font-size: 14px; color: #999; margin-bottom: 32px; }
+
+        .loading-steps { text-align: left; max-width: 320px; margin: 0 auto; }
+        .loading-step {
+            display: flex; align-items: center; gap: 12px;
+            padding: 10px 0; font-size: 14px; color: #ccc;
+            transition: color 0.4s, opacity 0.4s;
+        }
+        .loading-step.active { color: #667eea; font-weight: 600; }
+        .loading-step.done { color: #28a745; }
+
+        .step-icon {
+            width: 24px; height: 24px; border-radius: 50%; flex-shrink: 0;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 12px; background: #e9ecef; color: #999;
+            transition: all 0.4s;
+        }
+        .loading-step.active .step-icon { background: #667eea; color: white; }
+        .loading-step.done .step-icon { background: #28a745; color: white; }
+
+        .step-dot {
+            width: 8px; height: 8px; border-radius: 50%;
+            background: currentColor; display: inline-block;
+        }
+        .loading-step.active .step-dot {
+            animation: pulse 1s ease-in-out infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        .loading-footer { margin-top: 28px; font-size: 12px; color: #bbb; }
+    </style>
 </head>
-
-<body style="font-family: Arial; max-width: 700px; margin: auto;">
-
-  <h2>AI Interviewer</h2>
-
-  <!-- Resume Upload -->
-  <div id="resumeSection">
-    <input type="file" id="resumeFile" />
-    <button onclick="startInterview()">Start Interview</button>
-  </div>
-
-  <!-- Interview Section -->
-  <div id="interviewSection" style="display:none; margin-top:20px;">
-
-    <!-- Avatar + Question -->
-    <div style="display:flex; align-items:center; gap:20px;">
-      <img src="assets/avatar.png" width="120" />
-      <div>
-        <b>Interviewer:</b>
-        <p id="questionText"></p>
-      </div>
+<body>
+    <!-- Loading overlay -->
+    <div id="loadingOverlay" class="loading-overlay">
+        <div class="loading-card">
+            <div class="loading-brand">26Pixel</div>
+            <div class="loading-spinner"></div>
+            <div class="loading-title">Preparing Your Interview</div>
+            <div class="loading-subtitle">Our AI is crafting a personalized experience</div>
+            <div class="loading-steps">
+                <div class="loading-step" id="step0">
+                    <div class="step-icon"><span class="step-dot"></span></div>
+                    <span>Analyzing job description</span>
+                </div>
+                <div class="loading-step" id="step1">
+                    <div class="step-icon"><span class="step-dot"></span></div>
+                    <span>Extracting domain expertise</span>
+                </div>
+                <div class="loading-step" id="step2">
+                    <div class="step-icon"><span class="step-dot"></span></div>
+                    <span>Generating tailored questions</span>
+                </div>
+                <div class="loading-step" id="step3">
+                    <div class="step-icon"><span class="step-dot"></span></div>
+                    <span>Creating interviewer avatar</span>
+                </div>
+                <div class="loading-step" id="step4">
+                    <div class="step-icon"><span class="step-dot"></span></div>
+                    <span>Setting up interview room</span>
+                </div>
+            </div>
+            <div class="loading-footer">This may take a moment — quality takes time</div>
+        </div>
     </div>
 
-    <br>
+    <div class="container">
+        <div class="brand">26Pixel</div>
+        <h1>AI Technical Interviewer</h1>
+        <p class="subtitle">Real-time conversation with an AI interviewer</p>
 
-    <!-- Controls -->
-    <button id="startBtn" onclick="startRecording()">Start Recording</button>
-    <button id="stopBtn" onclick="stopRecording()">Stop & Submit</button>
+        <!-- Google Sign-In -->
+        <div class="signin-section">
+            <div id="signinPrompt">
+                <p>Sign in with your Google account to get started</p>
+                <div id="g_id_onload_container">
+                    <div id="g_id_signin"></div>
+                </div>
+            </div>
+            <div id="userInfo" class="user-info" style="display: none;">
+                <div class="avatar" id="userAvatar"></div>
+                <span id="userDisplay"></span>
+            </div>
+        </div>
 
+        <!-- Dashboard: existing interviews -->
+        <div id="dashboard" class="dashboard">
+            <h2>Your Interviews</h2>
+            <div id="interviewList"></div>
+        </div>
 
-    <p id="status"></p>
+        <!-- Create new interview form -->
+        <div id="formSection" class="form-section">
+            <div class="section-divider" id="formToggle">
+                <h2>New Interview</h2>
+                <div class="line"></div>
+                <span class="toggle" id="formToggleText">expand</span>
+            </div>
+            <div id="formBody" style="display: none;">
+                <div id="statusMsg" class="status"></div>
+                <form id="interviewForm">
+                    <div class="form-group">
+                        <label>Job Title <span class="required">*</span></label>
+                        <input type="text" id="jobTitle" required maxlength="200" placeholder="e.g. Senior Backend Engineer">
+                    </div>
+                    <div class="form-group">
+                        <label>Job Description <span class="required">*</span></label>
+                        <textarea id="jobDescription" required maxlength="50000" placeholder="Paste the full job description here..."></textarea>
+                        <div class="hint">Include required skills, experience, and responsibilities for best results</div>
+                    </div>
+                    <div class="form-group">
+                        <label>Difficulty Level</label>
+                        <select id="difficultyLevel">
+                            <option value="junior">Junior</option>
+                            <option value="intermediate" selected>Intermediate</option>
+                            <option value="senior">Senior</option>
+                        </select>
+                    </div>
+                    <button type="submit" class="submit-btn" id="submitBtn">Create & Start Interview</button>
+                </form>
+            </div>
+        </div>
+    </div>
 
-    <p><b>Your Answer (Transcript):</b></p>
-    <p id="transcript" style="color:green;"></p>
+    <script>
+        var API_BASE = window.location.origin;
+        var idToken = null;
+        var userName = null;
+        var userEmail = null;
+        var nonce = crypto.randomUUID();
 
-  </div>
+        async function initGoogleSignIn() {
+            try {
+                var resp = await fetch(API_BASE + '/api/config/client-id');
+                if (!resp.ok) throw new Error('Failed to load client ID');
+                var data = await resp.json();
 
-<script>
-let recorder;
-let audioChunks = [];
-let interviewOver = false;
+                google.accounts.id.initialize({
+                    client_id: data.client_id,
+                    callback: handleCredentialResponse,
+                    nonce: nonce,
+                    auto_select: false
+                });
+                google.accounts.id.renderButton(
+                    document.getElementById('g_id_signin'),
+                    { theme: 'outline', size: 'large', text: 'signin_with', width: 280 }
+                );
+            } catch (err) {
+                console.error('Google Sign-In init failed:', err);
+                showStatus('Failed to initialize Google Sign-In. Check server configuration.', 'error');
+            }
+        }
 
-// 🔊 SPEAK FUNCTION (YOU DON'T NEED TO EDIT THIS)
-function speak(text) {
-  if (!window.speechSynthesis) return;
+        function decodeJwtPayload(token) {
+            var base64Url = token.split('.')[1];
+            var base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+            var payload = decodeURIComponent(
+                atob(base64).split('').map(function(c) {
+                    return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+                }).join('')
+            );
+            return JSON.parse(payload);
+        }
 
-  const msg = new SpeechSynthesisUtterance(text);
-  msg.lang = "en-US";
-  msg.rate = 1;
-  msg.pitch = 1;
+        async function handleCredentialResponse(response) {
+            idToken = response.credential;
+            var payload = decodeJwtPayload(idToken);
+            userName = payload.name || 'User';
+            userEmail = payload.email || '';
 
-  window.speechSynthesis.cancel();
-  window.speechSynthesis.speak(msg);
-}
+            document.getElementById('signinPrompt').style.display = 'none';
+            document.getElementById('userInfo').style.display = 'flex';
+            document.getElementById('userAvatar').textContent = userName.charAt(0).toUpperCase();
+            document.getElementById('userDisplay').textContent = userName + ' (' + userEmail + ')';
 
-// 📄 START INTERVIEW
-async function startInterview() {
-  const file = document.getElementById("resumeFile").files[0];
-  if (!file) {
-    alert("Please upload resume first");
-    return;
-  }
+            // Load dashboard
+            await loadDashboard();
 
-  const form = new FormData();
-  form.append("file", file);
+            // Show form section
+            document.getElementById('formSection').classList.add('visible');
+        }
 
-  const res = await fetch("http://127.0.0.1:8000/start_interview", {
-    method: "POST",
-    body: form
-  });
+        async function loadDashboard() {
+            try {
+                var resp = await fetch(API_BASE + '/api/v1/interviews', {
+                    headers: { 'Authorization': 'Bearer ' + idToken }
+                });
+                if (!resp.ok) return;
+                var data = await resp.json();
+                var list = data.interviews || [];
 
-  const data = await res.json();
+                var dashboardEl = document.getElementById('dashboard');
+                var listEl = document.getElementById('interviewList');
 
-  document.getElementById("resumeSection").style.display = "none";
-  document.getElementById("interviewSection").style.display = "block";
+                if (list.length === 0) {
+                    dashboardEl.style.display = 'none';
+                    // No interviews — auto-expand the create form
+                    document.getElementById('formBody').style.display = 'block';
+                    document.getElementById('formToggleText').textContent = 'collapse';
+                    return;
+                }
 
-  document.getElementById("questionText").innerText = data.question;
-  speak(data.question);
-}
+                listEl.innerHTML = '';
+                for (var i = 0; i < list.length; i++) {
+                    var iv = list[i];
+                    var card = document.createElement('div');
+                    card.className = 'interview-card';
 
-// 🎙️ START RECORDING
-async function startRecording() {
-  if (interviewOver) return;
+                    var dateStr = iv.created_at ? new Date(iv.created_at).toLocaleDateString('en-US', {
+                        month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit'
+                    }) : '';
 
-  audioChunks = [];
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    var badgeClass = (iv.status || 'created').replace('-', '_');
+                    var statusLabel = iv.status === 'in_progress' ? 'In Progress' : (iv.status || 'created');
 
-  recorder = new MediaRecorder(stream);
-  recorder.start();
+                    var html = '<div class="info">' +
+                        '<div class="title">' + escapeHtml(iv.job_title || 'Untitled') +
+                        '<span class="badge ' + badgeClass + '">' + statusLabel + '</span></div>' +
+                        '<div class="meta">' + escapeHtml(iv.candidate_name) + ' &middot; ' + dateStr + '</div>' +
+                        '</div><div class="actions">';
 
-  recorder.ondataavailable = e => audioChunks.push(e.data);
+                    if (iv.status !== 'completed') {
+                        html += '<button class="btn-sm btn-resume" onclick="resumeInterview(\'' + iv.interview_id + '\')">Resume</button>';
+                    }
+                    if (iv.has_report) {
+                        html += '<button class="btn-sm btn-report" onclick="viewReport(\'' + iv.interview_id + '\')">Report</button>';
+                    }
+                    html += '</div>';
 
-  document.getElementById("status").innerText = "Recording...";
-}
+                    card.innerHTML = html;
+                    listEl.appendChild(card);
+                }
 
-// ⏹️ STOP & SUBMIT
-async function stopRecording() {
-  if (interviewOver) return;
+                dashboardEl.classList.add('visible');
+            } catch (err) {
+                console.error('Failed to load interviews:', err);
+            }
+        }
 
-  recorder.stop();
+        function escapeHtml(str) {
+            var div = document.createElement('div');
+            div.textContent = str || '';
+            return div.innerHTML;
+        }
 
-  recorder.onstop = async () => {
-    document.getElementById("status").innerText = "Processing...";
+        async function resumeInterview(interviewId) {
+            try {
+                showStatus('Resuming interview...', 'loading');
 
-    const audioBlob = new Blob(audioChunks, { type: "audio/wav" });
-    const form = new FormData();
-    form.append("audio", audioBlob);
+                var startResp = await fetch(API_BASE + '/api/v1/interviews/' + interviewId + '/start-realtime', {
+                    method: 'POST',
+                    headers: { 'Authorization': 'Bearer ' + idToken }
+                });
 
-    const res = await fetch("http://127.0.0.1:8000/answer_audio", {
-      method: "POST",
-      body: form
-    });
+                if (!startResp.ok) {
+                    var err = await startResp.json().catch(function() { return {}; });
+                    throw new Error(err.detail || 'Failed to start session');
+                }
 
-    const data = await res.json();
+                var params = new URLSearchParams({ interview_id: interviewId, token: idToken });
+                window.location.href = '/realtime_interview.html?' + params.toString();
+            } catch (err) {
+                console.error('Resume failed:', err);
+                showStatus(err.message, 'error');
+            }
+        }
 
-    document.getElementById("transcript").innerText = data.transcript || "";
+        async function viewReport(interviewId) {
+            try {
+                var resp = await fetch(API_BASE + '/api/v1/interviews/' + interviewId + '/report', {
+                    headers: { 'Authorization': 'Bearer ' + idToken }
+                });
+                if (!resp.ok) throw new Error('Failed to load report');
+                var report = await resp.json();
+                // Open report in a new window as formatted JSON
+                var w = window.open('', '_blank');
+                w.document.write('<pre style="font-family:monospace;padding:20px;">' +
+                    escapeHtml(JSON.stringify(report, null, 2)) + '</pre>');
+            } catch (err) {
+                showStatus(err.message, 'error');
+            }
+        }
 
-    if (data.done) {
-    interviewOver = true;
+        function showStatus(message, type) {
+            var el = document.getElementById('statusMsg');
+            el.className = 'status visible ' + type;
+            if (type === 'loading') {
+                el.innerHTML = '<span class="spinner"></span>' + message;
+            } else {
+                el.textContent = message;
+            }
+        }
 
-    document.getElementById("questionText").innerText = data.message;
-    speak(data.message);
+        // Toggle form expand/collapse
+        document.getElementById('formToggle').addEventListener('click', function() {
+            var body = document.getElementById('formBody');
+            var text = document.getElementById('formToggleText');
+            if (body.style.display === 'none') {
+                body.style.display = 'block';
+                text.textContent = 'collapse';
+            } else {
+                body.style.display = 'none';
+                text.textContent = 'expand';
+            }
+        });
 
-  // 🔒 Hide controls
-    document.getElementById("startBtn").style.display = "none";
-    document.getElementById("stopBtn").style.display = "none";
+        // Loading overlay helpers
+        var loadingStepTimer = null;
 
-    document.getElementById("status").innerText = "";
-  return;
-    } else {
-    document.getElementById("questionText").innerText = data.next_question;
-    speak(data.next_question);
-    }
+        function showLoadingOverlay() {
+            var overlay = document.getElementById('loadingOverlay');
+            overlay.classList.add('visible');
+            // Reset all steps
+            for (var i = 0; i < 5; i++) {
+                var step = document.getElementById('step' + i);
+                step.className = 'loading-step';
+            }
+            // Animate steps progressively
+            var currentStep = 0;
+            document.getElementById('step0').classList.add('active');
 
-    document.getElementById("status").innerText = "";
-  };
-}
-</script>
+            loadingStepTimer = setInterval(function() {
+                if (currentStep < 5) {
+                    document.getElementById('step' + currentStep).classList.remove('active');
+                    document.getElementById('step' + currentStep).classList.add('done');
+                    document.getElementById('step' + currentStep).querySelector('.step-icon').innerHTML = '&#10003;';
+                }
+                currentStep++;
+                if (currentStep < 5) {
+                    document.getElementById('step' + currentStep).classList.add('active');
+                }
+            }, 4000);
+        }
 
+        function hideLoadingOverlay() {
+            if (loadingStepTimer) { clearInterval(loadingStepTimer); loadingStepTimer = null; }
+            document.getElementById('loadingOverlay').classList.remove('visible');
+        }
+
+        function completeAllSteps() {
+            if (loadingStepTimer) { clearInterval(loadingStepTimer); loadingStepTimer = null; }
+            for (var i = 0; i < 5; i++) {
+                var step = document.getElementById('step' + i);
+                step.className = 'loading-step done';
+                step.querySelector('.step-icon').innerHTML = '&#10003;';
+            }
+        }
+
+        // Form submission
+        document.getElementById('interviewForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+
+            var jobTitle = document.getElementById('jobTitle').value.trim();
+            var jobDescription = document.getElementById('jobDescription').value.trim();
+            var difficultyLevel = document.getElementById('difficultyLevel').value;
+
+            if (!jobTitle || !jobDescription) {
+                showStatus('Please fill in all required fields.', 'error');
+                return;
+            }
+
+            var submitBtn = document.getElementById('submitBtn');
+            submitBtn.disabled = true;
+            showLoadingOverlay();
+
+            try {
+                var createResp = await fetch(API_BASE + '/api/v1/interviews/create', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + idToken
+                    },
+                    body: JSON.stringify({
+                        job_description: jobDescription,
+                        job_title: jobTitle,
+                        candidate_name: userName,
+                        candidate_email: userEmail,
+                        difficulty_level: difficultyLevel
+                    })
+                });
+
+                if (!createResp.ok) {
+                    var errData = await createResp.json().catch(function() { return {}; });
+                    throw new Error(errData.detail || 'Interview creation failed (' + createResp.status + ')');
+                }
+
+                var createData = await createResp.json();
+                var interviewId = createData.interview_id;
+
+                var startResp = await fetch(API_BASE + '/api/v1/interviews/' + interviewId + '/start-realtime', {
+                    method: 'POST',
+                    headers: { 'Authorization': 'Bearer ' + idToken }
+                });
+
+                if (!startResp.ok) {
+                    var startErr = await startResp.json().catch(function() { return {}; });
+                    throw new Error(startErr.detail || 'Failed to start session (' + startResp.status + ')');
+                }
+
+                completeAllSteps();
+                await new Promise(function(r) { setTimeout(r, 800); });
+
+                var params = new URLSearchParams({ interview_id: interviewId, token: idToken });
+                window.location.href = '/realtime_interview.html?' + params.toString();
+            } catch (err) {
+                console.error('Error:', err);
+                hideLoadingOverlay();
+                showStatus(err.message, 'error');
+                submitBtn.disabled = false;
+            }
+        });
+
+        window.addEventListener('load', initGoogleSignIn);
+    </script>
 </body>
 </html>

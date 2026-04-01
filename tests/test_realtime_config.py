@@ -26,12 +26,11 @@ def test_get_missing_realtime_keys_all_missing(monkeypatch):
             "LIVEKIT_API_SECRET": "",
             "GEMINI_API_KEY": "",
             "DEEPGRAM_API_KEY": "",
-            "ELEVENLABS_API_KEY": "",
         },
     )
     missing = config.get_missing_realtime_keys()
     # LIVEKIT is grouped as one
-    assert set(missing) == {"LIVEKIT", "GEMINI", "DEEPGRAM", "ELEVENLABS"}
+    assert set(missing) == {"LIVEKIT", "GEMINI", "DEEPGRAM"}
 
 
 def test_get_missing_realtime_keys_all_present(monkeypatch):
@@ -43,8 +42,6 @@ def test_get_missing_realtime_keys_all_present(monkeypatch):
             "LIVEKIT_API_SECRET": "s",
             "GEMINI_API_KEY": "g",
             "DEEPGRAM_API_KEY": "d",
-            "ELEVENLABS_API_KEY": "e",
         },
     )
     assert config.get_missing_realtime_keys() == []
-

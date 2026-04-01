@@ -6,7 +6,6 @@ import asyncio
 from typing import Dict, List, Optional
 from datetime import datetime
 from config import settings
-from hedra_avatar import create_interviewer_persona
 
 
 class TechnicalInterviewSession:

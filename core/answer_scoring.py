@@ -1,11 +1,15 @@
 """
 Answer Scoring and Evaluation
-Uses Claude to evaluate candidate answers with detailed reasoning
+Uses Gemini to evaluate candidate answers with detailed reasoning
 """
 import json
-from anthropic import Anthropic
+import logging
+import re
+import google.generativeai as genai
 from config import settings
 from typing import Dict, List, Optional
+
+logger = logging.getLogger("answer_scoring")
 
 
 def score_candidate_answer(
@@ -14,13 +18,13 @@ def score_candidate_answer(
     follow_up_answer: Optional[str] = None
 ) -> Dict:
     """
-    Score a single candidate answer using Claude
-    
+    Score a single candidate answer using Gemini
+
     Args:
         question: Question dictionary with rubric and expected competencies
         candidate_answer: Transcript of candidate's answer
         follow_up_answer: Optional follow-up answer if provided
-        
+
     Returns:
         Score dictionary with:
         - score: 0-10 numeric score
@@ -32,16 +36,17 @@ def score_candidate_answer(
         - technical_accuracy: "incorrect", "partial", or "correct"
         - follow_up_recommended: Boolean
     """
-    if not settings.ANTHROPIC_API_KEY:
-        raise ValueError("ANTHROPIC_API_KEY is not configured. Please set it in .env file")
-    
-    client = Anthropic(api_key=settings.ANTHROPIC_API_KEY)
-    
+    if not settings.GEMINI_API_KEY:
+        raise ValueError("GEMINI_API_KEY is not configured. Please set it in .env file")
+
+    genai.configure(api_key=settings.GEMINI_API_KEY)
+    model = genai.GenerativeModel(settings.GEMINI_SCORING_MODEL)
+
     # Combine main answer and follow-up if available
     full_answer = candidate_answer
     if follow_up_answer:
         full_answer = f"{candidate_answer}\n\nFollow-up: {follow_up_answer}"
-    
+
     scoring_prompt = f"""Evaluate this candidate's answer to a technical interview question.
 
 QUESTION:
@@ -81,34 +86,33 @@ Be thorough and fair. Consider:
 - Communication clarity
 - Problem-solving approach
 - Consideration of edge cases and trade-offs
+
+Return ONLY the JSON object, no other text.
 """
-    
+
     try:
-        response = client.messages.create(
-            model=settings.CLAUDE_MODEL,
-            max_tokens=1024,
-            messages=[{
-                "role": "user",
-                "content": scoring_prompt
-            }]
-        )
-        
+        generation_config = {
+            "temperature": 0.3,  # Lower temp for consistent scoring
+            "max_output_tokens": 1024,
+        }
+        response = model.generate_content(scoring_prompt, generation_config=generation_config)
+
         # Extract JSON from response
-        response_text = response.content[0].text.strip()
-        
+        response_text = response.text.strip()
+
         # Try to parse JSON (might be wrapped in markdown code blocks)
         if "```json" in response_text:
             response_text = response_text.split("```json")[1].split("```")[0].strip()
         elif "```" in response_text:
             response_text = response_text.split("```")[1].split("```")[0].strip()
-        
+
         score_data = json.loads(response_text)
-        
+
         # Validate score is in range
         score_data["score"] = max(0, min(10, int(score_data.get("score", 5))))
-        
+
         return score_data
-        
+
     except json.JSONDecodeError as e:
         raise ValueError(f"Failed to parse scoring JSON: {e}\nResponse: {response_text}")
     except Exception as e:
@@ -121,48 +125,48 @@ def score_all_answers(
 ) -> List[Dict]:
     """
     Score all candidate answers
-    
+
     Args:
         answers: List of answer dictionaries with question_idx and transcript
         questions: List of question dictionaries
-        
+
     Returns:
         List of score dictionaries (one per answer)
     """
     scores = []
-    
+
     for answer_obj in answers:
         question_idx = answer_obj.get("question_idx", 0)
-        
+
         if question_idx >= len(questions):
             raise ValueError(f"Question index {question_idx} out of range")
-        
+
         question = questions[question_idx]
         candidate_answer = answer_obj.get("transcript", "")
         follow_up = answer_obj.get("follow_up_transcript")
-        
+
         score = score_candidate_answer(
             question=question,
             candidate_answer=candidate_answer,
             follow_up_answer=follow_up
         )
-        
+
         # Add metadata
         score["question_idx"] = question_idx
         score["question"] = question.get("question", "")
-        
+
         scores.append(score)
-    
+
     return scores
 
 
 def calculate_overall_metrics(scores: List[Dict]) -> Dict:
     """
     Calculate overall interview metrics from individual scores
-    
+
     Args:
         scores: List of score dictionaries
-        
+
     Returns:
         Dictionary with overall metrics
     """
@@ -173,29 +177,29 @@ def calculate_overall_metrics(scores: List[Dict]) -> Dict:
             "communication_clarity_pct": 0.0,
             "depth_pct": 0.0
         }
-    
+
     total_score = sum(s.get("score", 0) for s in scores)
     overall_score = total_score / len(scores)
-    
+
     # Calculate percentages
     technical_correct = sum(
-        1 for s in scores 
+        1 for s in scores
         if s.get("technical_accuracy") == "correct"
     )
     technical_accuracy_pct = (technical_correct / len(scores)) * 100
-    
+
     communication_good = sum(
-        1 for s in scores 
+        1 for s in scores
         if s.get("communication_clarity") in ["good", "excellent"]
     )
     communication_clarity_pct = (communication_good / len(scores)) * 100
-    
+
     depth_good = sum(
-        1 for s in scores 
+        1 for s in scores
         if s.get("depth_level") in ["intermediate", "deep"]
     )
     depth_pct = (depth_good / len(scores)) * 100
-    
+
     return {
         "overall_score": round(overall_score, 2),
         "technical_accuracy_pct": round(technical_accuracy_pct, 1),
@@ -203,4 +207,3 @@ def calculate_overall_metrics(scores: List[Dict]) -> Dict:
         "depth_pct": round(depth_pct, 1),
         "total_questions": len(scores)
     }
-

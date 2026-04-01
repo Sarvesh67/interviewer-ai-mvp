@@ -194,29 +194,30 @@
         <div class="controls">
             <button id="connectBtn" class="btn-primary">Connect to Interview</button>
             <button id="disconnectBtn" class="btn-danger hidden">End Interview</button>
+            <a id="backLink" href="/" class="hidden" style="display:none; padding:12px 24px; background:#6c757d; color:white; border-radius:8px; text-decoration:none; font-weight:600; font-size:16px; transition:all 0.3s;">Back to Dashboard</a>
         </div>
     </div>
 
     <script>
-        const API_BASE = 'http://localhost:8000';
+        const API_BASE = window.location.origin;
         let room = null;
         let interviewId = null;
-        
-        // Get interview ID from URL or prompt
+        let idToken = null;
+
+        // Get interview ID and token from URL params (set by index.html)
         const urlParams = new URLSearchParams(window.location.search);
         interviewId = urlParams.get('interview_id');
-        
-        if (!interviewId) {
-            interviewId = prompt('Enter Interview ID:');
-            if (!interviewId) {
-                alert('Interview ID is required');
-                window.location.href = '/';
-            }
+        idToken = urlParams.get('token');
+
+        if (!interviewId || !idToken) {
+            window.location.href = '/';
         }
-        
-        // Update URL with interview ID
-        if (!urlParams.get('interview_id')) {
-            window.history.replaceState({}, '', `?interview_id=${interviewId}`);
+
+        // Clear token from URL bar for security, keep interview_id only
+        window.history.replaceState({}, '', `?interview_id=${interviewId}`);
+
+        function authHeaders(extra = {}) {
+            return { 'Authorization': `Bearer ${idToken}`, ...extra };
         }
         
         const statusDiv = document.getElementById('status');
@@ -238,7 +239,8 @@
                 
                 // Start real-time interview
                 const response = await fetch(`${API_BASE}/api/v1/interviews/${interviewId}/start-realtime`, {
-                    method: 'POST'
+                    method: 'POST',
+                    headers: authHeaders()
                 });
                 
                 if (!response.ok) {
@@ -248,7 +250,9 @@
                 const data = await response.json();
                 
                 // Get interview details
-                const interviewResponse = await fetch(`${API_BASE}/api/v1/interviews/${interviewId}`);
+                const interviewResponse = await fetch(`${API_BASE}/api/v1/interviews/${interviewId}`, {
+                    headers: authHeaders()
+                });
                 const interviewData = await interviewResponse.json();
                 
                 // Update UI
@@ -377,13 +381,15 @@
             }
             
             showStatus('Interview ended', 'error');
-            connectBtn.classList.remove('hidden');
+            connectBtn.classList.add('hidden');
             disconnectBtn.classList.add('hidden');
+            document.getElementById('backLink').style.display = 'inline-block';
             
             // Optionally complete the interview
             try {
                 await fetch(`${API_BASE}/api/v1/interviews/${interviewId}/complete`, {
-                    method: 'POST'
+                    method: 'POST',
+                    headers: authHeaders()
                 });
             } catch (e) {
                 console.error('Error completing interview:', e);
