@@ -55,7 +55,6 @@ class RealtimeInterviewAgent:
         self._awaiting_answer = False
         self._expecting_follow_up = False  # flag for conversation_item_added handler
         self._answer_timer: Optional[asyncio.Task] = None  # silence timeout task
-        self._follow_up_stream_task: Optional[asyncio.Task] = None
         self._answer_silence_seconds = 6.0  # seconds of silence before answer is considered complete
         self._nudge_given = False  # whether we've already nudged for unanswered on current question
 
@@ -140,32 +139,6 @@ class RealtimeInterviewAgent:
 
         # Send final transcript with what was actually "spoken"
         final_text = " ".join(spoken_words) if spoken_words else text
-        await self._send_transcript("interviewer", final_text, is_final=True)
-
-    async def _stream_follow_up_transcript(self, text: str):
-        """
-        Stream a follow-up question's text word-by-word.
-        Handles cancellation: sends final transcript with only words streamed so far.
-        """
-        words = text.split()
-        spoken = []
-        delay = 1.0 / 2.8
-
-        try:
-            for i, word in enumerate(words):
-                spoken.append(word)
-                await self._send_transcript(
-                    "interviewer",
-                    " ".join(spoken),
-                    is_final=False,
-                )
-                if i < len(words) - 1:
-                    await asyncio.sleep(delay)
-        except asyncio.CancelledError:
-            pass  # speech ended or was interrupted
-
-        # Final transcript = only words actually streamed
-        final_text = " ".join(spoken) if spoken else text
         await self._send_transcript("interviewer", final_text, is_final=True)
 
     # ──────────────────────────────────────────────
@@ -396,7 +369,6 @@ class RealtimeInterviewAgent:
 
         # Reset per-question state
         self._cancel_answer_timer()
-        self._cancel_follow_up_stream()
         self.current_conversation = [{
             "role": "interviewer",
             "type": "main_question",
@@ -423,8 +395,6 @@ class RealtimeInterviewAgent:
         transcript = (transcript or "").strip()
         if not transcript:
             return
-
-        self._cancel_follow_up_stream()
 
         # Check for navigation intents FIRST — always process these,
         # even if _awaiting_answer is False (timer may have already fired)
@@ -481,12 +451,6 @@ class RealtimeInterviewAgent:
 
         # Reset silence timer — wait for user to finish speaking
         self._reset_answer_timer()
-
-    def _cancel_follow_up_stream(self):
-        """Cancel any in-flight follow-up transcript streaming task."""
-        if self._follow_up_stream_task and not self._follow_up_stream_task.done():
-            self._follow_up_stream_task.cancel()
-        self._follow_up_stream_task = None
 
     def _cancel_answer_timer(self):
         """Cancel the pending answer timer"""
@@ -548,7 +512,8 @@ class RealtimeInterviewAgent:
             })
             await self._send_transcript("interviewer", nudge)
             await self.agent_session.say(nudge, allow_interruptions=True)
-            # _awaiting_answer stays True — candidate can respond or say "skip"
+            # _awaiting_answer stays True — restart silence timer so we don't get stuck
+            self._reset_answer_timer()
             return
 
         # "answered" OR "unanswered" after nudge → submit and move on
@@ -567,12 +532,8 @@ class RealtimeInterviewAgent:
 
         if not self.session.is_complete():
             await asyncio.sleep(1)
-            # Mark previous question as answered, then ask next
-            # Both happen inside _ask_current_question AFTER interviewer speaks
-            await self._send_question(answered_idx, "", "answered")
             await self._ask_current_question()
         else:
-            await self._send_question(answered_idx, "", "answered")
             await self._end_interview()
 
     async def _interview_time_limit(self):
@@ -630,7 +591,6 @@ class RealtimeInterviewAgent:
     async def _end_interview(self):
         """End the interview"""
         self._cancel_answer_timer()
-        self._cancel_follow_up_stream()
         self._cancel_interview_timer()
         closing = self.session.get_closing_message()
         await self._say_with_live_transcript(closing, allow_interruptions=False)
