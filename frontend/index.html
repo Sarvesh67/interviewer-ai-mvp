@@ -23,19 +23,14 @@
             background: white;
             border-radius: 20px;
             box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-            max-width: 700px;
+            max-width: 900px;
             width: 100%;
             padding: 40px;
         }
 
         .brand {
-            text-align: center;
-            margin-bottom: 8px;
-            font-size: 14px;
-            font-weight: 600;
-            color: #667eea;
-            letter-spacing: 2px;
-            text-transform: uppercase;
+            text-align: center; margin-bottom: 8px; font-size: 14px;
+            font-weight: 600; color: #667eea; letter-spacing: 2px; text-transform: uppercase;
         }
 
         h1 { color: #333; text-align: center; margin-bottom: 6px; font-size: 24px; }
@@ -43,10 +38,8 @@
 
         /* Sign-in */
         .signin-section {
-            text-align: center;
-            padding: 30px 0;
-            border-bottom: 1px solid #e9ecef;
-            margin-bottom: 30px;
+            text-align: center; padding: 30px 0;
+            border-bottom: 1px solid #e9ecef; margin-bottom: 30px;
         }
         .signin-section p { color: #666; margin-bottom: 16px; font-size: 14px; }
         #g_id_onload_container { display: flex; justify-content: center; }
@@ -64,9 +57,26 @@
         }
 
         /* Dashboard */
-        .dashboard { display: none; margin-bottom: 30px; }
+        .dashboard { display: none; }
         .dashboard.visible { display: block; }
-        .dashboard h2 { font-size: 18px; color: #333; margin-bottom: 14px; }
+
+        .dashboard-header {
+            display: flex; align-items: center; justify-content: space-between;
+            margin-bottom: 16px;
+        }
+        .dashboard-header h2 { font-size: 18px; color: #333; }
+
+        .btn-new-interview {
+            padding: 10px 20px; background: #667eea; color: white;
+            border: none; border-radius: 8px; font-size: 14px; font-weight: 600;
+            cursor: pointer; transition: all 0.2s;
+        }
+        .btn-new-interview:hover {
+            background: #5568d3; transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        #interviewList { max-height: 55vh; overflow-y: auto; }
 
         .interview-card {
             display: flex; align-items: center; justify-content: space-between;
@@ -84,8 +94,7 @@
 
         .badge {
             display: inline-block; padding: 2px 8px; border-radius: 4px;
-            font-size: 11px; font-weight: 600; text-transform: uppercase;
-            margin-left: 8px;
+            font-size: 11px; font-weight: 600; text-transform: uppercase; margin-left: 8px;
         }
         .badge.created { background: #e9ecef; color: #666; }
         .badge.in_progress { background: #fff3cd; color: #856404; }
@@ -98,25 +107,39 @@
             font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s;
         }
         .btn-sm:hover { transform: translateY(-1px); box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
-        .btn-resume { background: #667eea; color: white; }
-        .btn-resume:hover { background: #5568d3; }
-        .btn-report { background: #28a745; color: white; }
-        .btn-report:hover { background: #218838; }
+        .btn-start { background: #28a745; color: white; }
+        .btn-start:hover { background: #218838; }
+        .btn-report { background: #667eea; color: white; }
+        .btn-report:hover { background: #5568d3; }
 
-        .empty-state { text-align: center; color: #999; padding: 20px 0; font-size: 14px; }
+        .empty-state { text-align: center; color: #999; padding: 30px 0; font-size: 14px; }
 
-        .section-divider {
-            display: flex; align-items: center; gap: 12px;
-            margin-bottom: 20px; cursor: pointer; user-select: none;
+        /* Modal */
+        .modal-overlay {
+            display: none; position: fixed; inset: 0; z-index: 900;
+            background: rgba(0, 0, 0, 0.5); backdrop-filter: blur(4px);
+            align-items: center; justify-content: center;
         }
-        .section-divider h2 { font-size: 18px; color: #333; white-space: nowrap; }
-        .section-divider .line { flex: 1; height: 1px; background: #e9ecef; }
-        .section-divider .toggle { font-size: 12px; color: #667eea; }
+        .modal-overlay.visible { display: flex; }
+
+        .modal-card {
+            background: white; border-radius: 20px; padding: 32px;
+            max-width: 560px; width: 90%; max-height: 85vh; overflow-y: auto;
+            box-shadow: 0 25px 80px rgba(0, 0, 0, 0.3);
+            animation: slideUp 0.3s ease-out;
+        }
+        .modal-header {
+            display: flex; align-items: center; justify-content: space-between;
+            margin-bottom: 20px;
+        }
+        .modal-header h2 { font-size: 20px; color: #333; }
+        .modal-close {
+            background: none; border: none; font-size: 28px; color: #999;
+            cursor: pointer; padding: 0 4px; line-height: 1;
+        }
+        .modal-close:hover { color: #333; }
 
         /* Form */
-        .form-section { display: none; }
-        .form-section.visible { display: block; }
-
         .form-group { margin-bottom: 20px; }
         .form-group label { display: block; margin-bottom: 6px; font-weight: 600; color: #333; font-size: 14px; }
         .form-group label .required { color: #e74c3c; }
@@ -150,17 +173,8 @@
             text-align: center; font-size: 14px; display: none;
         }
         .status.visible { display: block; }
-        .status.loading { background: #fff3cd; color: #856404; }
         .status.error { background: #f8d7da; color: #721c24; }
         .status.success { background: #d4edda; color: #155724; }
-
-        .spinner {
-            display: inline-block; width: 14px; height: 14px;
-            border: 2px solid #856404; border-top-color: transparent;
-            border-radius: 50%; animation: spin 0.8s linear infinite;
-            vertical-align: middle; margin-right: 6px;
-        }
-        @keyframes spin { to { transform: rotate(360deg); } }
 
         /* Loading overlay */
         .loading-overlay {
@@ -181,48 +195,29 @@
             to { opacity: 1; transform: translateY(0); }
         }
 
-        .loading-brand { font-size: 12px; font-weight: 600; color: #667eea; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 24px; }
+        .loading-brand {
+            font-size: 12px; font-weight: 600; color: #667eea;
+            letter-spacing: 2px; text-transform: uppercase; margin-bottom: 24px;
+        }
 
         .loading-spinner {
             width: 56px; height: 56px; margin: 0 auto 28px;
-            border: 4px solid #e9ecef; border-top-color: #667eea;
+            border: 4px solid #e9ecef;
+            border-top-color: #667eea; border-right-color: #764ba2;
             border-radius: 50%; animation: spin 1s linear infinite;
         }
+        @keyframes spin { to { transform: rotate(360deg); } }
 
-        .loading-title { font-size: 20px; font-weight: 700; color: #333; margin-bottom: 8px; }
-        .loading-subtitle { font-size: 14px; color: #999; margin-bottom: 32px; }
+        .loading-title { font-size: 20px; font-weight: 700; color: #333; margin-bottom: 20px; }
 
-        .loading-steps { text-align: left; max-width: 320px; margin: 0 auto; }
-        .loading-step {
-            display: flex; align-items: center; gap: 12px;
-            padding: 10px 0; font-size: 14px; color: #ccc;
-            transition: color 0.4s, opacity 0.4s;
+        .loading-message {
+            font-size: 16px; color: #667eea; font-weight: 500;
+            min-height: 28px; margin-bottom: 24px;
+            transition: opacity 0.5s ease-in-out;
         }
-        .loading-step.active { color: #667eea; font-weight: 600; }
-        .loading-step.done { color: #28a745; }
+        .loading-message.fade-out { opacity: 0; }
 
-        .step-icon {
-            width: 24px; height: 24px; border-radius: 50%; flex-shrink: 0;
-            display: flex; align-items: center; justify-content: center;
-            font-size: 12px; background: #e9ecef; color: #999;
-            transition: all 0.4s;
-        }
-        .loading-step.active .step-icon { background: #667eea; color: white; }
-        .loading-step.done .step-icon { background: #28a745; color: white; }
-
-        .step-dot {
-            width: 8px; height: 8px; border-radius: 50%;
-            background: currentColor; display: inline-block;
-        }
-        .loading-step.active .step-dot {
-            animation: pulse 1s ease-in-out infinite;
-        }
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.3; }
-        }
-
-        .loading-footer { margin-top: 28px; font-size: 12px; color: #bbb; }
+        .loading-footer { font-size: 12px; color: #bbb; }
     </style>
 </head>
 <body>
@@ -232,30 +227,39 @@
             <div class="loading-brand">26Pixel</div>
             <div class="loading-spinner"></div>
             <div class="loading-title">Preparing Your Interview</div>
-            <div class="loading-subtitle">Our AI is crafting a personalized experience</div>
-            <div class="loading-steps">
-                <div class="loading-step" id="step0">
-                    <div class="step-icon"><span class="step-dot"></span></div>
-                    <span>Analyzing job description</span>
-                </div>
-                <div class="loading-step" id="step1">
-                    <div class="step-icon"><span class="step-dot"></span></div>
-                    <span>Extracting domain expertise</span>
-                </div>
-                <div class="loading-step" id="step2">
-                    <div class="step-icon"><span class="step-dot"></span></div>
-                    <span>Generating tailored questions</span>
-                </div>
-                <div class="loading-step" id="step3">
-                    <div class="step-icon"><span class="step-dot"></span></div>
-                    <span>Creating interviewer avatar</span>
-                </div>
-                <div class="loading-step" id="step4">
-                    <div class="step-icon"><span class="step-dot"></span></div>
-                    <span>Setting up interview room</span>
-                </div>
+            <div id="loadingMessage" class="loading-message">Brewing the perfect questions...</div>
+            <div class="loading-footer">This usually takes 15-30 seconds</div>
+        </div>
+    </div>
+
+    <!-- Create interview modal -->
+    <div id="createModal" class="modal-overlay">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h2>New Interview</h2>
+                <button class="modal-close" onclick="closeCreateModal()">&times;</button>
             </div>
-            <div class="loading-footer">This may take a moment — quality takes time</div>
+            <div id="statusMsg" class="status"></div>
+            <form id="interviewForm">
+                <div class="form-group">
+                    <label>Job Title <span class="required">*</span></label>
+                    <input type="text" id="jobTitle" required maxlength="200" placeholder="e.g. Senior Backend Engineer">
+                </div>
+                <div class="form-group">
+                    <label>Job Description <span class="required">*</span></label>
+                    <textarea id="jobDescription" required maxlength="50000" placeholder="Paste the full job description here..."></textarea>
+                    <div class="hint">Include required skills, experience, and responsibilities for best results</div>
+                </div>
+                <div class="form-group">
+                    <label>Difficulty Level</label>
+                    <select id="difficultyLevel">
+                        <option value="junior">Junior</option>
+                        <option value="intermediate" selected>Intermediate</option>
+                        <option value="senior">Senior</option>
+                    </select>
+                </div>
+                <button type="submit" class="submit-btn" id="submitBtn">Create Interview</button>
+            </form>
         </div>
     </div>
 
@@ -278,42 +282,13 @@
             </div>
         </div>
 
-        <!-- Dashboard: existing interviews -->
+        <!-- Dashboard -->
         <div id="dashboard" class="dashboard">
-            <h2>Your Interviews</h2>
+            <div class="dashboard-header">
+                <h2>Your Interviews</h2>
+                <button class="btn-new-interview" onclick="openCreateModal()">+ New Interview</button>
+            </div>
             <div id="interviewList"></div>
-        </div>
-
-        <!-- Create new interview form -->
-        <div id="formSection" class="form-section">
-            <div class="section-divider" id="formToggle">
-                <h2>New Interview</h2>
-                <div class="line"></div>
-                <span class="toggle" id="formToggleText">expand</span>
-            </div>
-            <div id="formBody" style="display: none;">
-                <div id="statusMsg" class="status"></div>
-                <form id="interviewForm">
-                    <div class="form-group">
-                        <label>Job Title <span class="required">*</span></label>
-                        <input type="text" id="jobTitle" required maxlength="200" placeholder="e.g. Senior Backend Engineer">
-                    </div>
-                    <div class="form-group">
-                        <label>Job Description <span class="required">*</span></label>
-                        <textarea id="jobDescription" required maxlength="50000" placeholder="Paste the full job description here..."></textarea>
-                        <div class="hint">Include required skills, experience, and responsibilities for best results</div>
-                    </div>
-                    <div class="form-group">
-                        <label>Difficulty Level</label>
-                        <select id="difficultyLevel">
-                            <option value="junior">Junior</option>
-                            <option value="intermediate" selected>Intermediate</option>
-                            <option value="senior">Senior</option>
-                        </select>
-                    </div>
-                    <button type="submit" class="submit-btn" id="submitBtn">Create & Start Interview</button>
-                </form>
-            </div>
         </div>
     </div>
 
@@ -324,6 +299,7 @@
         var userEmail = null;
         var nonce = crypto.randomUUID();
 
+        /* ---- Google Sign-In ---- */
         async function initGoogleSignIn() {
             try {
                 var resp = await fetch(API_BASE + '/api/config/client-id');
@@ -342,7 +318,6 @@
                 );
             } catch (err) {
                 console.error('Google Sign-In init failed:', err);
-                showStatus('Failed to initialize Google Sign-In. Check server configuration.', 'error');
             }
         }
 
@@ -359,6 +334,12 @@
 
         async function handleCredentialResponse(response) {
             idToken = response.credential;
+            sessionStorage.setItem('idToken', idToken);
+            await restoreSession(idToken);
+        }
+
+        async function restoreSession(token) {
+            idToken = token;
             var payload = decodeJwtPayload(idToken);
             userName = payload.name || 'User';
             userEmail = payload.email || '';
@@ -368,13 +349,10 @@
             document.getElementById('userAvatar').textContent = userName.charAt(0).toUpperCase();
             document.getElementById('userDisplay').textContent = userName + ' (' + userEmail + ')';
 
-            // Load dashboard
             await loadDashboard();
-
-            // Show form section
-            document.getElementById('formSection').classList.add('visible');
         }
 
+        /* ---- Dashboard ---- */
         async function loadDashboard() {
             try {
                 var resp = await fetch(API_BASE + '/api/v1/interviews', {
@@ -388,10 +366,9 @@
                 var listEl = document.getElementById('interviewList');
 
                 if (list.length === 0) {
-                    dashboardEl.style.display = 'none';
-                    // No interviews — auto-expand the create form
-                    document.getElementById('formBody').style.display = 'block';
-                    document.getElementById('formToggleText').textContent = 'collapse';
+                    listEl.innerHTML = '<div class="empty-state">No interviews yet. Click "+ New Interview" to get started!</div>';
+                    dashboardEl.classList.add('visible');
+                    openCreateModal();
                     return;
                 }
 
@@ -414,10 +391,10 @@
                         '<div class="meta">' + escapeHtml(iv.candidate_name) + ' &middot; ' + dateStr + '</div>' +
                         '</div><div class="actions">';
 
-                    if (iv.status !== 'completed') {
-                        html += '<button class="btn-sm btn-resume" onclick="resumeInterview(\'' + iv.interview_id + '\')">Resume</button>';
+                    if (iv.status === 'created' || iv.status === 'in_progress') {
+                        html += '<button class="btn-sm btn-start" onclick="startInterview(\'' + iv.interview_id + '\')">Start Interview</button>';
                     }
-                    if (iv.has_report) {
+                    if (iv.status === 'completed' && iv.has_report) {
                         html += '<button class="btn-sm btn-report" onclick="viewReport(\'' + iv.interview_id + '\')">Report</button>';
                     }
                     html += '</div>';
@@ -438,26 +415,10 @@
             return div.innerHTML;
         }
 
-        async function resumeInterview(interviewId) {
-            try {
-                showStatus('Resuming interview...', 'loading');
-
-                var startResp = await fetch(API_BASE + '/api/v1/interviews/' + interviewId + '/start-realtime', {
-                    method: 'POST',
-                    headers: { 'Authorization': 'Bearer ' + idToken }
-                });
-
-                if (!startResp.ok) {
-                    var err = await startResp.json().catch(function() { return {}; });
-                    throw new Error(err.detail || 'Failed to start session');
-                }
-
-                var params = new URLSearchParams({ interview_id: interviewId, token: idToken });
-                window.location.href = '/realtime_interview.html?' + params.toString();
-            } catch (err) {
-                console.error('Resume failed:', err);
-                showStatus(err.message, 'error');
-            }
+        /* ---- Actions ---- */
+        function startInterview(interviewId) {
+            var params = new URLSearchParams({ interview_id: interviewId, token: idToken });
+            window.location.href = '/realtime_interview.html?' + params.toString();
         }
 
         async function viewReport(interviewId) {
@@ -467,81 +428,71 @@
                 });
                 if (!resp.ok) throw new Error('Failed to load report');
                 var report = await resp.json();
-                // Open report in a new window as formatted JSON
                 var w = window.open('', '_blank');
                 w.document.write('<pre style="font-family:monospace;padding:20px;">' +
                     escapeHtml(JSON.stringify(report, null, 2)) + '</pre>');
             } catch (err) {
-                showStatus(err.message, 'error');
+                console.error('Report failed:', err);
             }
+        }
+
+        /* ---- Modal ---- */
+        function openCreateModal() {
+            document.getElementById('createModal').classList.add('visible');
+        }
+
+        function closeCreateModal() {
+            document.getElementById('createModal').classList.remove('visible');
+            document.getElementById('interviewForm').reset();
+            document.getElementById('statusMsg').className = 'status';
         }
 
         function showStatus(message, type) {
             var el = document.getElementById('statusMsg');
             el.className = 'status visible ' + type;
-            if (type === 'loading') {
-                el.innerHTML = '<span class="spinner"></span>' + message;
-            } else {
-                el.textContent = message;
-            }
+            el.textContent = message;
         }
 
-        // Toggle form expand/collapse
-        document.getElementById('formToggle').addEventListener('click', function() {
-            var body = document.getElementById('formBody');
-            var text = document.getElementById('formToggleText');
-            if (body.style.display === 'none') {
-                body.style.display = 'block';
-                text.textContent = 'collapse';
-            } else {
-                body.style.display = 'none';
-                text.textContent = 'expand';
-            }
-        });
-
-        // Loading overlay helpers
-        var loadingStepTimer = null;
+        /* ---- Loading overlay ---- */
+        var loadingMessages = [
+            "Brewing the perfect questions...",
+            "Teaching our AI your tech stack...",
+            "Warming up the interview room...",
+            "Calibrating difficulty levels...",
+            "Preparing follow-up scenarios...",
+            "Fine-tuning the conversation flow...",
+            "Almost ready to roll...",
+            "Polishing the virtual whiteboard...",
+            "Loading industry best practices...",
+            "Setting the stage for greatness..."
+        ];
+        var loadingMsgTimer = null;
+        var loadingMsgIndex = 0;
 
         function showLoadingOverlay() {
             var overlay = document.getElementById('loadingOverlay');
             overlay.classList.add('visible');
-            // Reset all steps
-            for (var i = 0; i < 5; i++) {
-                var step = document.getElementById('step' + i);
-                step.className = 'loading-step';
-            }
-            // Animate steps progressively
-            var currentStep = 0;
-            document.getElementById('step0').classList.add('active');
+            loadingMsgIndex = 0;
+            var msgEl = document.getElementById('loadingMessage');
+            msgEl.textContent = loadingMessages[0];
+            msgEl.classList.remove('fade-out');
 
-            loadingStepTimer = setInterval(function() {
-                if (currentStep < 5) {
-                    document.getElementById('step' + currentStep).classList.remove('active');
-                    document.getElementById('step' + currentStep).classList.add('done');
-                    document.getElementById('step' + currentStep).querySelector('.step-icon').innerHTML = '&#10003;';
-                }
-                currentStep++;
-                if (currentStep < 5) {
-                    document.getElementById('step' + currentStep).classList.add('active');
-                }
-            }, 4000);
+            loadingMsgTimer = setInterval(function() {
+                msgEl.classList.add('fade-out');
+                setTimeout(function() {
+                    loadingMsgIndex = (loadingMsgIndex + 1) % loadingMessages.length;
+                    msgEl.textContent = loadingMessages[loadingMsgIndex];
+                    msgEl.classList.remove('fade-out');
+                }, 500);
+            }, 3500);
         }
 
         function hideLoadingOverlay() {
-            if (loadingStepTimer) { clearInterval(loadingStepTimer); loadingStepTimer = null; }
+            if (loadingMsgTimer) { clearInterval(loadingMsgTimer); loadingMsgTimer = null; }
             document.getElementById('loadingOverlay').classList.remove('visible');
         }
 
-        function completeAllSteps() {
-            if (loadingStepTimer) { clearInterval(loadingStepTimer); loadingStepTimer = null; }
-            for (var i = 0; i < 5; i++) {
-                var step = document.getElementById('step' + i);
-                step.className = 'loading-step done';
-                step.querySelector('.step-icon').innerHTML = '&#10003;';
-            }
-        }
-
-        // Form submission
+        /* ---- Form submission ---- */
         document.getElementById('interviewForm').addEventListener('submit', async function(e) {
             e.preventDefault();
 
@@ -556,6 +507,7 @@
 
             var submitBtn = document.getElementById('submitBtn');
             submitBtn.disabled = true;
+            closeCreateModal();
             showLoadingOverlay();
 
             try {
@@ -579,33 +531,38 @@
                     throw new Error(errData.detail || 'Interview creation failed (' + createResp.status + ')');
                 }
 
-                var createData = await createResp.json();
-                var interviewId = createData.interview_id;
-
-                var startResp = await fetch(API_BASE + '/api/v1/interviews/' + interviewId + '/start-realtime', {
-                    method: 'POST',
-                    headers: { 'Authorization': 'Bearer ' + idToken }
-                });
-
-                if (!startResp.ok) {
-                    var startErr = await startResp.json().catch(function() { return {}; });
-                    throw new Error(startErr.detail || 'Failed to start session (' + startResp.status + ')');
-                }
-
-                completeAllSteps();
-                await new Promise(function(r) { setTimeout(r, 800); });
-
-                var params = new URLSearchParams({ interview_id: interviewId, token: idToken });
-                window.location.href = '/realtime_interview.html?' + params.toString();
+                hideLoadingOverlay();
+                await loadDashboard();
             } catch (err) {
                 console.error('Error:', err);
                 hideLoadingOverlay();
+                openCreateModal();
                 showStatus(err.message, 'error');
+            } finally {
                 submitBtn.disabled = false;
             }
         });
 
-        window.addEventListener('load', initGoogleSignIn);
+        window.addEventListener('load', async function() {
+            // Check for existing session from sessionStorage
+            var savedToken = sessionStorage.getItem('idToken');
+            if (savedToken) {
+                try {
+                    var payload = decodeJwtPayload(savedToken);
+                    // Check token hasn't expired (exp is in seconds)
+                    if (payload.exp && payload.exp * 1000 > Date.now()) {
+                        await restoreSession(savedToken);
+                        return;
+                    }
+                    // Token expired — clear it
+                    sessionStorage.removeItem('idToken');
+                } catch (e) {
+                    sessionStorage.removeItem('idToken');
+                }
+            }
+            // No valid saved session — show Google Sign-In
+            initGoogleSignIn();
+        });
     </script>
 </body>
 </html>

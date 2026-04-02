@@ -12,7 +12,7 @@
             padding: 0;
             box-sizing: border-box;
         }
-        
+
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -22,7 +22,7 @@
             justify-content: center;
             padding: 20px;
         }
-        
+
         .container {
             background: white;
             border-radius: 20px;
@@ -31,19 +31,19 @@
             width: 100%;
             padding: 30px;
         }
-        
+
         h1 {
             color: #333;
             margin-bottom: 10px;
             text-align: center;
         }
-        
+
         .subtitle {
             color: #666;
             text-align: center;
             margin-bottom: 30px;
         }
-        
+
         .status {
             padding: 15px;
             border-radius: 10px;
@@ -51,43 +51,68 @@
             text-align: center;
             font-weight: 500;
         }
-        
+
         .status.connecting {
             background: #fff3cd;
             color: #856404;
         }
-        
+
         .status.connected {
             background: #d4edda;
             color: #155724;
         }
-        
+
         .status.error {
             background: #f8d7da;
             color: #721c24;
         }
-        
+
+        /* Video layout: single column by default, 2-up when interviewer joins */
         .video-container {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
+            display: flex;
+            justify-content: center;
             gap: 20px;
             margin-bottom: 20px;
+            transition: all 0.4s ease;
         }
-        
+
         .video-box {
             position: relative;
             background: #000;
             border-radius: 10px;
             overflow: hidden;
             aspect-ratio: 16/9;
+            width: 100%;
+            max-width: 560px;
+            transition: all 0.4s ease;
         }
-        
+
+        .video-container.two-up {
+            justify-content: center;
+        }
+
+        .video-container.two-up .video-box {
+            max-width: none;
+            width: calc(50% - 10px);
+        }
+
+        @media (max-width: 700px) {
+            .video-container.two-up {
+                flex-direction: column;
+                align-items: center;
+            }
+            .video-container.two-up .video-box {
+                width: 100%;
+                max-width: 560px;
+            }
+        }
+
         .video-box video {
             width: 100%;
             height: 100%;
             object-fit: cover;
         }
-        
+
         .video-label {
             position: absolute;
             bottom: 10px;
@@ -98,15 +123,15 @@
             border-radius: 5px;
             font-size: 12px;
         }
-        
+
         .controls {
             display: flex;
             gap: 10px;
             justify-content: center;
             margin-top: 20px;
         }
-        
-        button {
+
+        button, .btn-link {
             padding: 12px 24px;
             border: none;
             border-radius: 8px;
@@ -114,87 +139,89 @@
             font-weight: 600;
             cursor: pointer;
             transition: all 0.3s;
+            text-decoration: none;
+            display: inline-block;
         }
-        
-        button:hover {
+
+        button:hover, .btn-link:hover {
             transform: translateY(-2px);
             box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
         }
-        
+
         .btn-primary {
             background: #667eea;
             color: white;
         }
-        
+
         .btn-primary:hover {
             background: #5568d3;
         }
-        
+
         .btn-danger {
             background: #e74c3c;
             color: white;
         }
-        
+
         .btn-danger:hover {
             background: #c0392b;
         }
-        
+
         .btn-secondary {
             background: #6c757d;
             color: white;
         }
-        
+
         .interview-info {
             background: #f8f9fa;
             padding: 20px;
             border-radius: 10px;
             margin-bottom: 20px;
         }
-        
+
         .interview-info h3 {
             margin-bottom: 10px;
             color: #333;
         }
-        
+
         .interview-info p {
             color: #666;
             margin: 5px 0;
         }
-        
+
         .hidden {
-            display: none;
+            display: none !important;
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>🎤 Live Technical Interview</h1>
+        <h1>Live Technical Interview</h1>
         <p class="subtitle">Real-time conversation with AI interviewer</p>
-        
+
         <div id="status" class="status hidden"></div>
-        
+
         <div id="interviewInfo" class="interview-info hidden">
             <h3>Interview Details</h3>
             <p><strong>Position:</strong> <span id="jobTitle"></span></p>
             <p><strong>Candidate:</strong> <span id="candidateName"></span></p>
             <p><strong>Questions:</strong> <span id="totalQuestions"></span></p>
         </div>
-        
-        <div class="video-container">
-            <div class="video-box">
+
+        <div class="video-container" id="videoContainer">
+            <div class="video-box" id="localVideoBox">
                 <video id="localVideo" autoplay muted playsinline></video>
                 <div class="video-label">You</div>
             </div>
-            <div class="video-box">
+            <div class="video-box hidden" id="remoteVideoBox">
                 <video id="remoteVideo" autoplay playsinline></video>
                 <div class="video-label">Interviewer</div>
             </div>
         </div>
-        
+
         <div class="controls">
+            <a id="backBtnPre" href="/" class="btn-link btn-secondary">Back to Dashboard</a>
             <button id="connectBtn" class="btn-primary">Connect to Interview</button>
             <button id="disconnectBtn" class="btn-danger hidden">End Interview</button>
-            <a id="backLink" href="/" class="hidden" style="display:none; padding:12px 24px; background:#6c757d; color:white; border-radius:8px; text-decoration:none; font-weight:600; font-size:16px; transition:all 0.3s;">Back to Dashboard</a>
         </div>
     </div>
 
@@ -204,71 +231,77 @@
         let interviewId = null;
         let idToken = null;
 
-        // Get interview ID and token from URL params (set by index.html)
+        // Get interview ID and token from URL params or sessionStorage
         const urlParams = new URLSearchParams(window.location.search);
         interviewId = urlParams.get('interview_id');
-        idToken = urlParams.get('token');
+        idToken = urlParams.get('token') || sessionStorage.getItem('idToken');
 
         if (!interviewId || !idToken) {
             window.location.href = '/';
         }
 
-        // Clear token from URL bar for security, keep interview_id only
+        // Persist token for cross-page navigation
+        sessionStorage.setItem('idToken', idToken);
+
+        // Clear token from URL bar for security
         window.history.replaceState({}, '', `?interview_id=${interviewId}`);
 
         function authHeaders(extra = {}) {
             return { 'Authorization': `Bearer ${idToken}`, ...extra };
         }
-        
+
         const statusDiv = document.getElementById('status');
         const connectBtn = document.getElementById('connectBtn');
         const disconnectBtn = document.getElementById('disconnectBtn');
+        const backBtnPre = document.getElementById('backBtnPre');
         const localVideo = document.getElementById('localVideo');
         const remoteVideo = document.getElementById('remoteVideo');
         const interviewInfo = document.getElementById('interviewInfo');
-        
+
         function showStatus(message, type) {
             statusDiv.textContent = message;
             statusDiv.className = `status ${type}`;
             statusDiv.classList.remove('hidden');
         }
-        
+
         async function connectToInterview() {
             try {
                 showStatus('Starting real-time interview...', 'connecting');
-                
+
+                // Show interviewer pane and switch to 2-up layout immediately
+                document.getElementById('remoteVideoBox').classList.remove('hidden');
+                document.getElementById('videoContainer').classList.add('two-up');
+
                 // Start real-time interview
                 const response = await fetch(`${API_BASE}/api/v1/interviews/${interviewId}/start-realtime`, {
                     method: 'POST',
                     headers: authHeaders()
                 });
-                
+
                 if (!response.ok) {
                     throw new Error('Failed to start interview');
                 }
-                
+
                 const data = await response.json();
-                
+
                 // Get interview details
                 const interviewResponse = await fetch(`${API_BASE}/api/v1/interviews/${interviewId}`, {
                     headers: authHeaders()
                 });
                 const interviewData = await interviewResponse.json();
-                
+
                 // Update UI
                 document.getElementById('jobTitle').textContent = interviewData.job_title;
                 document.getElementById('candidateName').textContent = interviewData.candidate_info.name;
                 document.getElementById('totalQuestions').textContent = interviewData.total_questions;
                 interviewInfo.classList.remove('hidden');
-                
+
                 showStatus('Connecting to interview room...', 'connecting');
-                
+
                 // Connect to LiveKit room
                 const token = data.candidate_token;
                 const url = data.livekit_url;
-                
-                // LiveKit client is available as global 'LiveKit' or 'livekit'
-                // ✅ CORRECT - LivekitClient (lowercase 'k')
+
                 const LivekitClient = window.LivekitClient;
                 const { Room, RoomEvent, createLocalTracks } = LivekitClient;
 
@@ -276,9 +309,7 @@
                     adaptiveStream: true,
                     dynacast: true,
                 });
-                
-                // Handle remote tracks (interviewer agent + Hedra avatar participant)
-                // Hedra plugin defaults to avatar_participant_name="technical-interviewer" in this repo.
+
                 const INTERVIEWER_IDENTITIES = new Set(['interviewer-agent', 'technical-interviewer']);
                 let remoteAudioEl = null;
 
@@ -286,15 +317,11 @@
                     const identity = participant?.identity || 'unknown';
                     console.log('Track subscribed:', { kind: track.kind, identity });
 
-                    // Only attach REMOTE tracks to the remote elements.
-                    // Local tracks are attached when we create/publish them below.
                     if (track.kind === "video") {
                         if (INTERVIEWER_IDENTITIES.has(identity) || identity !== room.localParticipant.identity) {
                             track.attach(remoteVideo);
                         }
                     } else if (track.kind === "audio") {
-                        // Browser autoplay policies can block audio until a user gesture.
-                        // Clicking "Connect" is a gesture, so this usually succeeds.
                         const audioEl = document.createElement('audio');
                         audioEl.autoplay = true;
                         audioEl.playsInline = true;
@@ -302,7 +329,6 @@
                         track.attach(audioEl);
                         audioEl.play().catch(e => console.warn('Audio play failed:', e));
 
-                        // Keep a reference so we can stop it on unsubscribe
                         if (INTERVIEWER_IDENTITIES.has(identity)) remoteAudioEl = audioEl;
                     }
                 });
@@ -311,24 +337,24 @@
                     const identity = participant?.identity || 'unknown';
                     console.log('Track unsubscribed:', { kind: track.kind, identity });
                     track.detach();
+
                     if (track.kind === "audio" && remoteAudioEl) {
                         remoteAudioEl.pause();
                         remoteAudioEl.remove();
                         remoteAudioEl = null;
                     }
                 });
-                
+
                 room.on(RoomEvent.ParticipantConnected, (participant) => {
                     console.log('Participant connected:', participant.identity);
                     if (INTERVIEWER_IDENTITIES.has(participant.identity)) {
                         showStatus('Interviewer joined. Interview starting...', 'connected');
                     }
                 });
-                
+
                 room.on(RoomEvent.Disconnected, () => {
-                    showStatus('Disconnected from interview', 'error');
-                    connectBtn.classList.remove('hidden');
-                    disconnectBtn.classList.add('hidden');
+                    showStatus('Disconnected from interview. Redirecting...', 'connecting');
+                    setTimeout(function() { window.location.href = '/'; }, 2500);
                 });
 
                 room.on(RoomEvent.ConnectionFailed, (error) => {
@@ -338,54 +364,55 @@
                 room.on(RoomEvent.Reconnected, () => {
                     showStatus('Reconnected successfully', 'connected');
                 });
-                
+
                 // Connect to room
                 await room.prepareConnection(url, token);
                 await room.connect(url, token);
-                
+
                 // Get local video/audio
                 const localTracks = await createLocalTracks({
-                    audio: { 
-                        echoCancellation: true,    // ✅ Remove echo
-                        noiseSuppression: true,    // ✅ Clean audio
-                        autoGainControl: true      // ✅ Better volume
+                    audio: {
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true
                     },
                     video: {
-                        width: { ideal: 1280 },    // ✅ HD quality
+                        width: { ideal: 1280 },
                         height: { ideal: 720 },
-                        frameRate: { ideal: 30 }   // ✅ Smooth
+                        frameRate: { ideal: 30 }
                     }
                 });
-                
+
                 for (const track of localTracks) {
                     await room.localParticipant.publishTrack(track);
                     if (track.kind === 'video') {
                         track.attach(localVideo);
                     }
                 }
-                
+
                 showStatus('Connected! Interview in progress...', 'connected');
                 connectBtn.classList.add('hidden');
+                backBtnPre.classList.add('hidden');
                 disconnectBtn.classList.remove('hidden');
-                
+
             } catch (error) {
                 console.error('Error connecting:', error);
                 showStatus(`Error: ${error.message}`, 'error');
             }
         }
-        
+
         async function disconnect() {
             if (room) {
                 await room.disconnect();
                 room = null;
             }
-            
-            showStatus('Interview ended', 'error');
+
             connectBtn.classList.add('hidden');
             disconnectBtn.classList.add('hidden');
-            document.getElementById('backLink').style.display = 'inline-block';
-            
-            // Optionally complete the interview
+            backBtnPre.classList.add('hidden');
+
+            showStatus('Interview completed! Redirecting to dashboard...', 'connected');
+
             try {
                 await fetch(`${API_BASE}/api/v1/interviews/${interviewId}/complete`, {
                     method: 'POST',
@@ -394,11 +421,14 @@
             } catch (e) {
                 console.error('Error completing interview:', e);
             }
+
+            setTimeout(function() {
+                window.location.href = '/';
+            }, 2500);
         }
-        
+
         connectBtn.addEventListener('click', connectToInterview);
         disconnectBtn.addEventListener('click', disconnect);
     </script>
 </body>
 </html>
-
