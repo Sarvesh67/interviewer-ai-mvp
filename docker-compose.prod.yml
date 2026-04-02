@@ -1,0 +1,42 @@
+services:
+  api:
+    build:
+      context: .
+      target: api
+    env_file: .env
+    volumes:
+      - interview_data:/app/interview_store
+      - upload_data:/app/uploads
+    restart: unless-stopped
+    # No ports exposed — Caddy handles external traffic
+
+  agent:
+    build:
+      context: .
+      target: agent
+    env_file: .env
+    volumes:
+      - interview_data:/app/interview_store
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  interview_data:
+  upload_data:
+  caddy_data:
+  caddy_config:

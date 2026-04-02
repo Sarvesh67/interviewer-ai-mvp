@@ -4,8 +4,9 @@ Creates LiveKit rooms and starts interview agents for live conversations
 """
 import asyncio
 import logging
+import re
 from typing import Dict, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from livekit import api, rtc
 from livekit.agents import JobContext
@@ -15,8 +16,8 @@ from livekit.protocol.room import CreateRoomRequest
 import json
 from pathlib import Path
 from config import settings
-from interview_session import TechnicalInterviewSession
-from realtime_interview_agent import RealtimeInterviewAgent
+from core.session import TechnicalInterviewSession
+from agent.worker import RealtimeInterviewAgent
 
 logger = logging.getLogger("realtime_interview_manager")
 
@@ -63,13 +64,14 @@ class RealtimeInterviewManager:
     )
 )
             
-            # Create access token for candidate
+            # Create access token for candidate (expires in 1 hour)
             candidate_token = api.AccessToken(
                 api_key=settings.LIVEKIT_API_KEY,
                 api_secret=settings.LIVEKIT_API_SECRET
             ) \
                 .with_identity(candidate_name) \
                 .with_name(candidate_name) \
+                .with_ttl(timedelta(hours=1)) \
                 .with_grants(
                     api.VideoGrants(
                         room_join=True,
@@ -78,16 +80,17 @@ class RealtimeInterviewManager:
                         can_subscribe=True,
                     )
                 )
-            
+
             candidate_token_str = candidate_token.to_jwt()
-            
-            # Create access token for interviewer agent
+
+            # Create access token for interviewer agent (expires in 1 hour)
             agent_token = api.AccessToken(
                 api_key=settings.LIVEKIT_API_KEY,
                 api_secret=settings.LIVEKIT_API_SECRET
             ) \
                 .with_identity("interviewer-agent") \
                 .with_name("Technical Interviewer") \
+                .with_ttl(timedelta(hours=1)) \
                 .with_grants(
                     api.VideoGrants(
                         room_join=True,
@@ -96,7 +99,7 @@ class RealtimeInterviewManager:
                         can_subscribe=True,
                     )
                 )
-            
+
             agent_token_str = agent_token.to_jwt()
             
             return {
@@ -131,24 +134,14 @@ class RealtimeInterviewManager:
         logger.info("  python realtime_interview_agent.py dev")
 
 
-def get_interview_session_for_agent(interview_id: str) -> Optional[TechnicalInterviewSession]:
-    """
-    Retrieve interview session for agent
-    In production, this would fetch from database
-    For now, we'll use the in-memory storage from main.py
-    """
-    # Import here to avoid circular imports
-    from main import interviews
-    
-    if interview_id not in interviews:
-        return None
-    
-    interview_data = interviews[interview_id]
-    return interview_data.get("session")
+INTERVIEW_ID_PATTERN = re.compile(r"^interview_[a-f0-9]{12}$")
 
 
 def register_interview_session(interview_id: str, session: TechnicalInterviewSession):
     """Register interview session for agent access"""
+    if not INTERVIEW_ID_PATTERN.match(interview_id):
+        raise ValueError(f"Invalid interview_id format: {interview_id}")
+
     PERSIST_DIR = Path("interview_store")
     PERSIST_DIR.mkdir(exist_ok=True)
 
@@ -161,19 +154,28 @@ def register_interview_session(interview_id: str, session: TechnicalInterviewSes
     }
     (PERSIST_DIR / f"{interview_id}.json").write_text(json.dumps(payload))
 
+
 def get_interview_session(interview_id: str) -> Optional[TechnicalInterviewSession]:
     """Get interview session by ID"""
+    if not INTERVIEW_ID_PATTERN.match(interview_id):
+        logger.error(f"Invalid interview_id format: {interview_id}")
+        return None
+
     store_file = Path("interview_store") / f"{interview_id}.json"
     if store_file.exists():
-        payload = json.loads(store_file.read_text())
-        interview_session = TechnicalInterviewSession(
+        try:
+            payload = json.loads(store_file.read_text())
+        except json.JSONDecodeError as e:
+            logger.error(f"Corrupted session file for {interview_id}: {e}")
+            return None
+        return TechnicalInterviewSession(
             avatar_id=payload.get("avatar_id"),
             avatar_image_path=payload.get("avatar_image_path"),
             job_description=payload["job_description"],
             questions=payload["questions"],
             candidate_info=payload["candidate_info"],
         )
-        return interview_session
     else:
-        raise ValueError(f"Interview session not found for: {interview_id}")    
+        logger.error(f"Interview session file not found: {interview_id}")
+        return None
 

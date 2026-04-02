@@ -22,7 +22,7 @@ def _default_avatar_image_path() -> str:
     We keep this in code (instead of relying on cwd) so it works regardless of where the
     process is launched from.
     """
-    repo_root = Path(__file__).resolve().parent
+    repo_root = Path(__file__).resolve().parent.parent
     return str(repo_root / "frontend" / "assets" / "avatar.png")
 
 

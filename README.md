@@ -7,7 +7,7 @@ A production-ready AI-powered technical interview system that creates domain-exp
 - **🎭 Hedra Avatar Integration**: Photorealistic AI interviewer avatars
 - **🧠 Domain Expertise**: Extracts technical requirements from job descriptions
 - **❓ Intelligent Question Generation**: Creates contextual technical questions using Gemini
-- **📊 AI-Powered Scoring**: Evaluates answers with detailed reasoning using Claude
+- **📊 AI-Powered Scoring**: Evaluates answers with detailed reasoning using Gemini
 - **💬 Real-time Interviews**: LiveKit integration for real-time conversations
 - **📋 Comprehensive Reports**: Detailed feedback with ratings and recommendations
 
@@ -22,9 +22,9 @@ Technical Question Generation (Gemini)
     ↓
 Hedra Avatar Created (Domain Expert Persona)
     ↓
-Real-time Interview Session (LiveKit + Hedra)
+Real-time Interview Session (LiveKit + Hedra + Deepgram STT/TTS)
     ↓
-Answer Scoring & Rating (Claude)
+Answer Scoring & Rating (Gemini 3.1 Pro)
     ↓
 Detailed Interview Report
 ```
@@ -54,9 +54,9 @@ nano .env  # or use your preferred editor
 
 **Required API Keys:**
 - **Hedra**: Get from [hedra.com](https://hedra.com)
-- **Gemini**: Get from [ai.google.dev](https://ai.google.dev)
-- **Claude**: Get from [console.anthropic.com](https://console.anthropic.com)
+- **Gemini**: Get from [ai.google.dev](https://ai.google.dev) (question gen + scoring + conversation LLM)
 - **LiveKit**: Get from [cloud.livekit.io](https://cloud.livekit.io)
+- **Deepgram**: Get from [console.deepgram.com](https://console.deepgram.com) (STT + TTS)
 
 See [SETUP_GUIDE.md](SETUP_GUIDE.md) for detailed setup instructions.
 
@@ -64,13 +64,13 @@ See [SETUP_GUIDE.md](SETUP_GUIDE.md) for detailed setup instructions.
 
 ```bash
 # Run quick start check
-python quick_start.py
+python scripts/quick_start.py
 ```
 
 ### 4. Start Server
 
 ```bash
-uvicorn main:app --reload
+uvicorn app.server:app --reload
 ```
 
 ### 5. Test API
@@ -122,19 +122,29 @@ curl -X GET "http://localhost:8000/api/v1/interviews/{interview_id}/report"
 
 ```
 .
-├── main.py                  # FastAPI application with all endpoints
+├── app/                     # FastAPI server (Process 1)
+│   └── server.py            # Routes, middleware, auth
+├── agent/                   # LiveKit agent worker (Process 2)
+│   ├── worker.py            # Real-time interview agent
+│   └── manager.py           # Room creation, tokens, session persistence
+├── core/                    # Shared interview logic
+│   ├── session.py           # Interview session state machine
+│   ├── question_generator.py # Generate technical questions (Gemini)
+│   ├── domain_extraction.py # Extract domain knowledge (Gemini)
+│   ├── answer_scoring.py    # Score answers (Gemini Pro)
+│   └── report_generator.py  # Generate interview reports
+├── integrations/
+│   └── hedra.py             # Hedra avatar creation and persona
 ├── config.py                # Configuration and API key management
-├── domain_extraction.py     # Extract domain knowledge from job descriptions
-├── question_generator.py    # Generate technical questions
-├── hedra_avatar.py          # Hedra avatar creation and persona
-├── interview_session.py     # Interview session management
-├── answer_scoring.py        # Score answers using Claude
-├── report_generator.py      # Generate comprehensive reports
-├── quick_start.py           # Quick setup verification script
+├── utils/                   # Constants and string utilities
+├── tests/                   # Test suite
+├── scripts/                 # CLI tools (quick_start.py)
+├── frontend/                # Static HTML/JS for candidate UI
+├── Dockerfile               # Multi-stage build (api + agent targets)
+├── docker-compose.yml       # Local development
+├── docker-compose.prod.yml  # Production with Caddy HTTPS
 ├── requirements.txt         # Python dependencies
-├── env_template.txt         # Environment variables template
-├── SETUP_GUIDE.md          # Detailed setup instructions
-└── uploads/                 # Interview reports storage
+└── env_template.txt         # Environment variables template
 ```
 
 ## 🔧 API Endpoints
@@ -154,17 +164,17 @@ curl -X GET "http://localhost:8000/api/v1/interviews/{interview_id}/report"
 ## 💰 Cost Breakdown
 
 ### Per 30-minute Interview:
-- **Hedra Avatar**: $1.50 (30 min × $0.05/min)
-- **Gemini (Questions)**: FREE (free tier)
-- **Claude (Scoring)**: ~$0.10
+- **Hedra Avatar**: $1.50 (30 min x $0.05/min)
+- **Gemini (Questions + Scoring + Conversation)**: FREE (free tier, 250 RPD)
 - **LiveKit**: FREE (free tier)
-- **Total**: ~$1.60 per interview
+- **Deepgram (STT + TTS)**: ~$0.15
+- **Total**: ~$1.65 per interview
 
 ### Monthly (100 interviews):
 - **Hedra**: $75
-- **Claude**: $10
-- **Infrastructure**: $50
-- **Total**: ~$135/month
+- **Deepgram**: $15
+- **Infrastructure**: $6
+- **Total**: ~$96/month (Gemini free tier, Deepgram handles both STT and TTS)
 
 ## 🎯 Key Features
 
@@ -194,10 +204,13 @@ curl -X GET "http://localhost:8000/api/v1/interviews/{interview_id}/report"
 | Component | Technology | Purpose |
 |-----------|-----------|---------|
 | **Backend** | FastAPI | REST API framework |
-| **Question Generation** | Google Gemini | Generate contextual questions |
-| **Answer Scoring** | Anthropic Claude | Intelligent answer evaluation |
+| **Question Generation** | Google Gemini 3.1 Pro | Generate contextual questions |
+| **Answer Scoring** | Google Gemini 3.1 Pro | Intelligent answer evaluation |
+| **Conversation LLM** | Google Gemini 2.5 Flash | Real-time agent conversation |
 | **Avatar** | Hedra | Photorealistic interviewer |
 | **Real-time** | LiveKit | WebRTC for interviews |
+| **STT** | Deepgram Nova-2 | Speech-to-text |
+| **TTS** | Deepgram Aura-2 | Text-to-speech |
 | **Storage** | Local filesystem | Interview reports |
 
 ## 📚 Documentation

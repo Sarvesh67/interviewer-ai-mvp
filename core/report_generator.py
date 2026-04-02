@@ -4,7 +4,7 @@ Creates comprehensive interview reports with ratings and feedback
 """
 from datetime import datetime
 from typing import Dict, List, Optional
-from answer_scoring import calculate_overall_metrics
+from core.answer_scoring import calculate_overall_metrics
 
 
 def extract_top_items(scores: List[Dict], field: str, n: int = 3, reverse: bool = True) -> List[str]:
@@ -154,7 +154,7 @@ Key observations:
         
         # Metadata
         "report_generated_at": datetime.now().isoformat(),
-        "scoring_model": "claude-3-5-sonnet"
+        "scoring_model": "gemini-2.5-pro"
     }
     
     return report
