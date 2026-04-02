@@ -56,6 +56,7 @@ class RealtimeInterviewAgent:
         self._expecting_follow_up = False  # flag for conversation_item_added handler
         self._answer_timer: Optional[asyncio.Task] = None  # silence timeout task
         self._answer_silence_seconds = 6.0  # seconds of silence before answer is considered complete
+        self._nudge_given = False  # whether we've already nudged for unanswered on current question
 
         # Interview time limit
         self._interview_timer: Optional[asyncio.Task] = None
@@ -208,18 +209,31 @@ class RealtimeInterviewAgent:
                 try:
                     if not self._expecting_follow_up:
                         return
-                    if hasattr(event, "item") and getattr(event.item, "role", None) == "assistant":
-                        text = getattr(event.item, "text_content", None)
-                        if text:
-                            self._expecting_follow_up = False
-                            self.current_conversation.append({
-                                "role": "interviewer",
-                                "type": "follow_up",
-                                "text": text,
-                                "timestamp": datetime.now().isoformat(),
-                            })
-                            asyncio.create_task(self._send_transcript("interviewer", text))
-                            logger.info(f"Captured follow-up text: {text[:80]}")
+                    item = getattr(event, "item", None)
+                    if not item or getattr(item, "role", None) != "assistant":
+                        return
+
+                    # Try multiple attribute paths for the text
+                    text = getattr(item, "text_content", None)
+                    if not text:
+                        content = getattr(item, "content", [])
+                        for part in (content or []):
+                            if hasattr(part, "text"):
+                                text = part.text
+                                break
+                    if not text:
+                        logger.warning(f"Follow-up item had no text. Attrs: {dir(item)}")
+                        return
+
+                    self._expecting_follow_up = False
+                    self.current_conversation.append({
+                        "role": "interviewer",
+                        "type": "follow_up",
+                        "text": text,
+                        "timestamp": datetime.now().isoformat(),
+                    })
+                    asyncio.create_task(self._send_transcript("interviewer", text))
+                    logger.info(f"Follow-up transcript sent: {text[:80]}")
                 except Exception as e:
                     logger.warning(f"conversation_item_added handler error: {e}")
 
@@ -320,6 +334,7 @@ class RealtimeInterviewAgent:
         self.follow_up_count = 0
         self._awaiting_answer = True
         self._expecting_follow_up = False
+        self._nudge_given = False
 
         # Broadcast to frontend
         await self._send_question(idx, question_text, "active")
@@ -406,20 +421,22 @@ class RealtimeInterviewAgent:
             pass  # timer was reset by new speech — expected
 
     async def _process_complete_answer(self):
-        """Called after silence timeout. Decide: follow-up or submit."""
+        """Called after silence timeout. Evaluate answer and decide next action."""
         if not self._awaiting_answer:
             return
 
-        # Check if follow-up is needed based on FULL accumulated answer
-        if (
-            self.session.needs_follow_up(self.current_answer_text)
-            and self.follow_up_count < self.max_follow_ups_per_question
-        ):
+        question_text = self.session.get_current_question().get("question", "")
+        verdict = await self.session.evaluate_answer(
+            self.current_answer_text,
+            question_text,
+            self.follow_up_count,
+            self.max_follow_ups_per_question,
+        )
+        logger.info(f"Answer eval: {verdict} (words={len(self.current_answer_text.split())}, follow_ups={self.follow_up_count})")
+
+        if verdict == "follow_up":
             self.follow_up_count += 1
             self._expecting_follow_up = True
-            logger.info(f"Asking follow-up #{self.follow_up_count} (accumulated: {len(self.current_answer_text.split())} words)")
-
-            # Fire-and-forget — don't block the event loop
             self.agent_session.generate_reply(
                 user_input=self.current_answer_text,
                 instructions=(
@@ -428,19 +445,33 @@ class RealtimeInterviewAgent:
                 ),
                 allow_interruptions=True,
             )
-            # User will respond to the follow-up → new transcripts → timer resets
-            # No blocking, no lock, no sleep.
             return
 
-        # Answer complete — submit with full conversation
-        self._awaiting_answer = False
-        self.session.submit_answer(conversation=self.current_conversation)
-        self.session.persist_answers(self.ctx.room.name)
-        logger.info(f"Answer submitted ({len(self.current_answer_text.split())} words, {self.follow_up_count} follow-ups)")
+        if verdict == "unanswered" and not self._nudge_given:
+            self._nudge_given = True
+            nudge = "No worries if you'd like to skip this one. Would you like me to move on to the next question?"
+            self.current_conversation.append({
+                "role": "interviewer", "type": "nudge",
+                "text": nudge, "timestamp": datetime.now().isoformat(),
+            })
+            await self._send_transcript("interviewer", nudge)
+            await self.agent_session.say(nudge, allow_interruptions=True)
+            # _awaiting_answer stays True — candidate can respond or say "skip"
+            return
 
-        # Mark question as answered on frontend
+        # "answered" OR "unanswered" after nudge → submit and move on
+        self._awaiting_answer = False
+        if verdict == "unanswered" and not self.current_answer_text.strip():
+            self.session.submit_skip(self.current_conversation)
+            status = "skipped"
+        else:
+            self.session.submit_answer(conversation=self.current_conversation)
+            status = "answered"
+        self.session.persist_answers(self.ctx.room.name)
+        logger.info(f"Answer submitted as {status} ({len(self.current_answer_text.split())} words, {self.follow_up_count} follow-ups)")
+
         answered_idx = self.session.current_question_idx - 1
-        await self._send_question(answered_idx, "", "answered")
+        await self._send_question(answered_idx, "", status)
 
         if not self.session.is_complete():
             await asyncio.sleep(1)
@@ -513,6 +544,9 @@ class RealtimeInterviewAgent:
 
         self.session.end_interview()
         self.session.persist_answers(self.ctx.room.name)
+
+        # Tell frontend to generate report before we disconnect
+        await self._publish_data({"type": "interview_end"})
 
         await asyncio.sleep(2)
         if self.agent_session:

@@ -377,6 +377,8 @@
             return h;
         }
 
+        var reportGenerating = false;
+
         var statusBar = document.getElementById('statusBar');
         var connectBtn = document.getElementById('connectBtn');
         var disconnectBtn = document.getElementById('disconnectBtn');
@@ -624,6 +626,8 @@
                             handleTranscript(msg);
                         } else if (msg.type === 'timer') {
                             handleTimer(msg);
+                        } else if (msg.type === 'interview_end') {
+                            completeAndRedirect();
                         }
                     } catch (e) {
                         console.warn('Failed to parse data channel message:', e);
@@ -631,8 +635,10 @@
                 });
 
                 room.on(RoomEvent.Disconnected, function() {
-                    showStatus('Disconnected. Redirecting...', 'connecting');
-                    setTimeout(function() { window.location.href = '/'; }, 2500);
+                    if (!reportGenerating) {
+                        showStatus('Disconnected. Redirecting...', 'connecting');
+                        setTimeout(function() { window.location.href = '/'; }, 2500);
+                    }
                 });
 
                 room.on(RoomEvent.ConnectionFailed, function(error) {
@@ -673,17 +679,14 @@
             }
         }
 
-        async function disconnect() {
-            if (room) {
-                await room.disconnect();
-                room = null;
-            }
+        async function completeAndRedirect() {
+            if (reportGenerating) return;
+            reportGenerating = true;
 
             connectBtn.classList.add('hidden');
             disconnectBtn.classList.add('hidden');
-            backBtnPre.classList.add('hidden');
 
-            showStatus('Interview completed! Redirecting to dashboard...', 'connected');
+            showStatus('Interview completed! Generating report...', 'connected');
 
             try {
                 await fetch(API_BASE + '/api/v1/interviews/' + interviewId + '/complete', {
@@ -695,6 +698,14 @@
             }
 
             setTimeout(function() { window.location.href = '/'; }, 2500);
+        }
+
+        async function disconnect() {
+            if (room) {
+                await room.disconnect();
+                room = null;
+            }
+            await completeAndRedirect();
         }
 
         connectBtn.addEventListener('click', connectToInterview);

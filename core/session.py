@@ -3,10 +3,13 @@ Real-time Interview Session Management
 Handles LiveKit + Hedra integration for conducting interviews
 """
 import json
+import logging
 from pathlib import Path
 from typing import Dict, List, Optional
 from datetime import datetime
 from config import settings
+
+logger = logging.getLogger("interview_session")
 
 
 class TechnicalInterviewSession:
@@ -170,6 +173,45 @@ class TechnicalInterviewSession:
             return True
 
         return False
+
+    async def evaluate_answer(self, answer_text: str, question_text: str, follow_up_count: int, max_follow_ups: int) -> str:
+        """
+        Evaluate answer quality using LLM.
+        Returns: "follow_up", "unanswered", or "answered"
+        """
+        if not answer_text.strip():
+            return "unanswered"
+
+        if follow_up_count >= max_follow_ups:
+            return "answered"
+
+        import google.generativeai as genai
+        genai.configure(api_key=settings.GEMINI_API_KEY)
+        model = genai.GenerativeModel(settings.GEMINI_FOLLOW_UP_MODEL)
+
+        prompt = f"""Evaluate a candidate's interview answer. Classify as exactly ONE of:
+- "answered" — substantive attempt that addresses the question
+- "follow_up" — vague or partial, a follow-up would help draw out detail
+- "unanswered" — deflected, said "I don't know", or didn't attempt to answer
+
+QUESTION: {question_text}
+ANSWER: {answer_text}
+FOLLOW-UPS ALREADY ASKED: {follow_up_count}
+
+If follow-ups were already asked and the candidate hasn't improved much, lean toward "answered" to move on.
+
+Reply with ONLY one word: answered, follow_up, or unanswered"""
+
+        try:
+            response = await model.generate_content_async(prompt)
+            verdict = response.text.strip().lower().replace('"', '').replace("'", "")
+            if verdict in ("answered", "follow_up", "unanswered"):
+                return verdict
+            logger.warning(f"Unexpected evaluation result: {verdict}")
+            return "answered"
+        except Exception as e:
+            logger.warning(f"Answer evaluation failed: {e}")
+            return "answered" if len(answer_text.split()) >= 15 else "unanswered"
 
     def get_follow_up_question(self, transcript: str) -> str:
         """Generate follow-up question based on answer"""
