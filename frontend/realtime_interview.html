@@ -458,7 +458,8 @@
         }
 
         // ── Transcript panel state ──
-        var interimEntry = null;
+        var candidateInterim = null;      // candidate's in-progress entry
+        var interviewerInterim = null;    // interviewer's in-progress entry
         var transcriptStarted = false;
 
         function handleTranscript(msg) {
@@ -470,31 +471,50 @@
                 list.innerHTML = '';
             }
 
-            if (msg.speaker === 'candidate' && !msg.is_final) {
-                // Interim: update in-place
-                if (!interimEntry) {
-                    interimEntry = document.createElement('div');
-                    interimEntry.className = 'transcript-entry candidate interim';
-                    interimEntry.innerHTML = '<span class="speaker-label">You</span>' +
-                        '<span class="transcript-text"></span>';
-                    list.appendChild(interimEntry);
+            var isFinal = msg.is_final;
+            var speaker = msg.speaker;
+            var label = speaker === 'interviewer' ? 'Interviewer' : 'You';
+
+            if (!isFinal) {
+                // Interim transcript — update in-place (create if needed)
+                if (speaker === 'candidate') {
+                    if (!candidateInterim) {
+                        candidateInterim = document.createElement('div');
+                        candidateInterim.className = 'transcript-entry candidate interim';
+                        candidateInterim.innerHTML = '<span class="speaker-label">' + label + '</span>' +
+                            '<span class="transcript-text"></span>';
+                        list.appendChild(candidateInterim);
+                    }
+                    candidateInterim.querySelector('.transcript-text').textContent = msg.text;
+                } else {
+                    if (!interviewerInterim) {
+                        interviewerInterim = document.createElement('div');
+                        interviewerInterim.className = 'transcript-entry interviewer interim';
+                        interviewerInterim.innerHTML = '<span class="speaker-label">' + label + '</span>' +
+                            '<span class="transcript-text"></span>';
+                        list.appendChild(interviewerInterim);
+                    }
+                    interviewerInterim.querySelector('.transcript-text').textContent = msg.text;
                 }
-                interimEntry.querySelector('.transcript-text').textContent = msg.text;
                 list.scrollTop = list.scrollHeight;
                 return;
             }
 
-            // Final transcript
-            if (interimEntry && msg.speaker === 'candidate') {
-                interimEntry.classList.remove('interim');
-                interimEntry.querySelector('.transcript-text').textContent = msg.text;
-                interimEntry = null;
+            // Final transcript — solidify the interim entry or create a new one
+            if (speaker === 'candidate' && candidateInterim) {
+                candidateInterim.classList.remove('interim');
+                candidateInterim.querySelector('.transcript-text').textContent = msg.text;
+                candidateInterim = null;
+            } else if (speaker === 'interviewer' && interviewerInterim) {
+                interviewerInterim.classList.remove('interim');
+                interviewerInterim.querySelector('.transcript-text').textContent = msg.text;
+                interviewerInterim = null;
             } else {
+                // No interim to solidify — create a fresh final entry
                 var entry = document.createElement('div');
-                entry.className = 'transcript-entry ' + msg.speaker;
-                entry.innerHTML = '<span class="speaker-label">' +
-                    (msg.speaker === 'interviewer' ? 'Interviewer' : 'You') +
-                    '</span><span class="transcript-text">' + escapeHtml(msg.text) + '</span>';
+                entry.className = 'transcript-entry ' + speaker;
+                entry.innerHTML = '<span class="speaker-label">' + label + '</span>' +
+                    '<span class="transcript-text">' + escapeHtml(msg.text) + '</span>';
                 list.appendChild(entry);
             }
             list.scrollTop = list.scrollHeight;
