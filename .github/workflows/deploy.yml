@@ -1,0 +1,37 @@
+name: Deploy to DigitalOcean
+
+on:
+  push:
+    branches:
+      - production-ready
+
+jobs:
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to DigitalOcean via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DO_HOST }}
+          username: ${{ secrets.DO_USER }}
+          key: ${{ secrets.DO_SSH_KEY }}
+          script: |
+            set -e
+            cd /opt/interviewer
+
+            echo "Pulling latest code..."
+            git fetch origin production-ready
+            git reset --hard origin/production-ready
+
+            echo "Building and restarting services..."
+            docker compose -f docker-compose.prod.yml up -d --build --remove-orphans
+
+            echo "Cleaning up old images..."
+            docker image prune -f
+
+            echo "Deploy complete ✓"
