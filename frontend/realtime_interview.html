@@ -4,78 +4,94 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Live Technical Interview</title>
-    <!-- LiveKit Client SDK -->
     <script src="https://cdn.jsdelivr.net/npm/livekit-client/dist/livekit-client.umd.min.js"></script>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
 
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 20px;
+            padding: 16px;
         }
 
-        .container {
-            background: white;
-            border-radius: 20px;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-            max-width: 1200px;
-            width: 100%;
-            padding: 30px;
+        .page-container {
+            max-width: 1400px;
+            margin: 0 auto;
         }
 
-        h1 {
-            color: #333;
-            margin-bottom: 10px;
+        /* Header */
+        .header {
             text-align: center;
+            color: white;
+            margin-bottom: 16px;
         }
+        .header h1 { font-size: 22px; margin-bottom: 4px; }
+        .header .subtitle { font-size: 13px; opacity: 0.8; }
 
-        .subtitle {
-            color: #666;
-            text-align: center;
-            margin-bottom: 30px;
-        }
-
-        .status {
-            padding: 15px;
+        /* Status bar */
+        .status-bar {
+            padding: 10px 16px;
             border-radius: 10px;
-            margin-bottom: 20px;
             text-align: center;
             font-weight: 500;
+            font-size: 14px;
+            margin-bottom: 16px;
+            transition: all 0.3s;
+        }
+        .status-bar.hidden { display: none; }
+        .status-bar.connecting { background: #fff3cd; color: #856404; }
+        .status-bar.connected { background: #d4edda; color: #155724; }
+        .status-bar.error { background: #f8d7da; color: #721c24; }
+
+        /* Main layout: left (video) + right (questions + transcript) */
+        .main-layout {
+            display: flex;
+            gap: 16px;
+            align-items: flex-start;
         }
 
-        .status.connecting {
-            background: #fff3cd;
-            color: #856404;
+        .left-panel {
+            flex: 1;
+            min-width: 0;
         }
 
-        .status.connected {
-            background: #d4edda;
-            color: #155724;
+        .right-panel {
+            width: 360px;
+            flex-shrink: 0;
+            display: none;
+            flex-direction: column;
+            gap: 12px;
+            max-height: calc(100vh - 140px);
+        }
+        .right-panel.visible { display: flex; }
+
+        @media (max-width: 900px) {
+            .main-layout { flex-direction: column; }
+            .right-panel { width: 100%; max-height: 50vh; }
         }
 
-        .status.error {
-            background: #f8d7da;
-            color: #721c24;
+        /* Interview info card */
+        .interview-info {
+            background: white;
+            padding: 14px 16px;
+            border-radius: 10px;
+            margin-bottom: 12px;
+            font-size: 13px;
+            display: none;
         }
+        .interview-info.visible { display: block; }
+        .interview-info h3 { font-size: 14px; margin-bottom: 8px; color: #333; }
+        .interview-info p { color: #666; margin: 3px 0; }
 
-        /* Video layout: single column by default, 2-up when interviewer joins */
+        /* Video area */
         .video-container {
             display: flex;
             justify-content: center;
-            gap: 20px;
-            margin-bottom: 20px;
+            gap: 12px;
+            margin-bottom: 12px;
             transition: all 0.4s ease;
         }
-
         .video-box {
             position: relative;
             background: #000;
@@ -86,318 +102,574 @@
             max-width: 560px;
             transition: all 0.4s ease;
         }
-
-        .video-container.two-up {
-            justify-content: center;
-        }
-
         .video-container.two-up .video-box {
             max-width: none;
-            width: calc(50% - 10px);
+            width: calc(50% - 6px);
         }
-
         @media (max-width: 700px) {
-            .video-container.two-up {
-                flex-direction: column;
-                align-items: center;
-            }
-            .video-container.two-up .video-box {
-                width: 100%;
-                max-width: 560px;
-            }
+            .video-container.two-up { flex-direction: column; align-items: center; }
+            .video-container.two-up .video-box { width: 100%; max-width: 560px; }
         }
-
-        .video-box video {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-        }
-
+        .video-box video { width: 100%; height: 100%; object-fit: cover; }
         .video-label {
-            position: absolute;
-            bottom: 10px;
-            left: 10px;
-            background: rgba(0, 0, 0, 0.7);
-            color: white;
-            padding: 5px 10px;
-            border-radius: 5px;
-            font-size: 12px;
+            position: absolute; bottom: 8px; left: 8px;
+            background: rgba(0,0,0,0.7); color: white;
+            padding: 3px 8px; border-radius: 4px; font-size: 11px;
         }
+        .hidden { display: none !important; }
 
+        /* Controls */
         .controls {
-            display: flex;
-            gap: 10px;
-            justify-content: center;
-            margin-top: 20px;
+            display: flex; gap: 10px; justify-content: center; margin-top: 12px;
         }
-
         button, .btn-link {
-            padding: 12px 24px;
-            border: none;
-            border-radius: 8px;
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s;
-            text-decoration: none;
-            display: inline-block;
+            padding: 10px 20px; border: none; border-radius: 8px;
+            font-size: 15px; font-weight: 600; cursor: pointer;
+            transition: all 0.2s; text-decoration: none; display: inline-block;
         }
-
         button:hover, .btn-link:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+            transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.15);
         }
+        .btn-primary { background: #667eea; color: white; }
+        .btn-primary:hover { background: #5568d3; }
+        .btn-danger { background: #e74c3c; color: white; }
+        .btn-danger:hover { background: #c0392b; }
+        .btn-secondary { background: #6c757d; color: white; }
 
-        .btn-primary {
-            background: #667eea;
-            color: white;
-        }
-
-        .btn-primary:hover {
-            background: #5568d3;
-        }
-
-        .btn-danger {
-            background: #e74c3c;
-            color: white;
-        }
-
-        .btn-danger:hover {
-            background: #c0392b;
-        }
-
-        .btn-secondary {
-            background: #6c757d;
-            color: white;
-        }
-
-        .interview-info {
-            background: #f8f9fa;
-            padding: 20px;
+        /* Right panel: Question list */
+        .question-panel {
+            background: white;
             border-radius: 10px;
-            margin-bottom: 20px;
+            overflow: hidden;
+            max-height: 40%;
+            display: flex;
+            flex-direction: column;
         }
-
-        .interview-info h3 {
-            margin-bottom: 10px;
+        .question-panel-header {
+            padding: 10px 14px;
+            font-size: 13px;
+            font-weight: 600;
             color: #333;
+            border-bottom: 1px solid #e9ecef;
+            background: #f8f9fa;
+            flex-shrink: 0;
         }
-
-        .interview-info p {
+        .question-list {
+            overflow-y: auto;
+            flex: 1;
+        }
+        .q-item {
+            padding: 10px 14px;
+            border-bottom: 1px solid #f0f0f0;
+            font-size: 13px;
             color: #666;
-            margin: 5px 0;
+            border-left: 3px solid transparent;
+            transition: all 0.3s;
+            display: flex;
+            gap: 8px;
+            align-items: flex-start;
         }
+        .q-item:last-child { border-bottom: none; }
+        .q-item .q-icon { flex-shrink: 0; font-size: 12px; margin-top: 2px; }
 
-        .hidden {
-            display: none !important;
+        .q-item.active {
+            border-left-color: #667eea;
+            background: #f0f2ff;
+            color: #333;
+            font-weight: 500;
+        }
+        .q-item.active .q-icon { color: #667eea; }
+
+        .q-item.answered {
+            border-left-color: #28a745;
+            opacity: 0.6;
+        }
+        .q-item.answered .q-icon { color: #28a745; }
+
+        .q-item.skipped {
+            border-left-color: #999;
+            opacity: 0.5;
+        }
+        .q-item.skipped .q-icon { color: #999; }
+
+        /* Pulsing dot for active question */
+        @keyframes pulse-dot {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+        .q-item.active .q-icon { animation: pulse-dot 1.5s ease-in-out infinite; }
+
+        /* Right panel: Transcript */
+        .transcript-panel {
+            background: white;
+            border-radius: 10px;
+            flex: 1;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            min-height: 200px;
+        }
+        .transcript-panel-header {
+            padding: 10px 14px;
+            font-size: 13px;
+            font-weight: 600;
+            color: #333;
+            border-bottom: 1px solid #e9ecef;
+            background: #f8f9fa;
+            flex-shrink: 0;
+        }
+        .transcript-list {
+            overflow-y: auto;
+            flex: 1;
+            padding: 8px 0;
+        }
+        .transcript-entry {
+            padding: 6px 14px;
+            font-size: 13px;
+            line-height: 1.4;
+        }
+        .transcript-entry .speaker-label {
+            font-weight: 600;
+            font-size: 11px;
+            text-transform: uppercase;
+            display: block;
+            margin-bottom: 2px;
+        }
+        .transcript-entry.interviewer .speaker-label { color: #667eea; }
+        .transcript-entry.candidate .speaker-label { color: #28a745; }
+        .transcript-entry .transcript-text { color: #444; }
+
+        /* Interim transcript styling */
+        .transcript-entry.interim .transcript-text {
+            opacity: 0.5;
+            font-style: italic;
+        }
+        .transcript-entry.interim::after {
+            content: '';
+            display: inline-block;
+            width: 3px;
+            height: 13px;
+            background: #667eea;
+            margin-left: 2px;
+            vertical-align: text-bottom;
+            animation: blink-cursor 0.8s step-end infinite;
+        }
+        @keyframes blink-cursor { 50% { opacity: 0; } }
+
+        /* Interview timer */
+        .interview-timer {
+            display: none;
+            text-align: center;
+            padding: 8px 16px;
+            background: rgba(255,255,255,0.95);
+            border-radius: 8px;
+            margin-bottom: 12px;
+            font-size: 13px;
+            color: #666;
+            border: 1px solid #e9ecef;
+        }
+        .interview-timer.visible { display: block; }
+        .interview-timer .time-display {
+            font-size: 22px;
+            font-weight: 700;
+            font-variant-numeric: tabular-nums;
+            color: #333;
+            letter-spacing: 1px;
+        }
+        .interview-timer .time-label {
+            font-size: 11px;
+            color: #999;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .interview-timer.warning .time-display { color: #e67e22; }
+        .interview-timer.critical .time-display { color: #e74c3c; }
+
+        .transcript-empty {
+            padding: 20px 14px;
+            text-align: center;
+            color: #bbb;
+            font-size: 13px;
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>Live Technical Interview</h1>
-        <p class="subtitle">Real-time conversation with AI interviewer</p>
-
-        <div id="status" class="status hidden"></div>
-
-        <div id="interviewInfo" class="interview-info hidden">
-            <h3>Interview Details</h3>
-            <p><strong>Position:</strong> <span id="jobTitle"></span></p>
-            <p><strong>Candidate:</strong> <span id="candidateName"></span></p>
-            <p><strong>Questions:</strong> <span id="totalQuestions"></span></p>
+    <div class="page-container">
+        <div class="header">
+            <h1>Live Technical Interview</h1>
+            <p class="subtitle">Real-time conversation with AI interviewer</p>
         </div>
 
-        <div class="video-container" id="videoContainer">
-            <div class="video-box" id="localVideoBox">
-                <video id="localVideo" autoplay muted playsinline></video>
-                <div class="video-label">You</div>
-            </div>
-            <div class="video-box hidden" id="remoteVideoBox">
-                <video id="remoteVideo" autoplay playsinline></video>
-                <div class="video-label">Interviewer</div>
-            </div>
+        <div id="statusBar" class="status-bar hidden"></div>
+
+        <div id="interviewTimer" class="interview-timer">
+            <div class="time-label">Time Remaining</div>
+            <div id="timerDisplay" class="time-display">45:00</div>
         </div>
 
-        <div class="controls">
-            <a id="backBtnPre" href="/" class="btn-link btn-secondary">Back to Dashboard</a>
-            <button id="connectBtn" class="btn-primary">Connect to Interview</button>
-            <button id="disconnectBtn" class="btn-danger hidden">End Interview</button>
+        <div class="main-layout">
+            <!-- Left: Video + Controls -->
+            <div class="left-panel">
+                <div id="interviewInfo" class="interview-info">
+                    <h3>Interview Details</h3>
+                    <p><strong>Position:</strong> <span id="jobTitle"></span></p>
+                    <p><strong>Candidate:</strong> <span id="candidateName"></span></p>
+                    <p><strong>Questions:</strong> <span id="totalQuestions"></span></p>
+                </div>
+
+                <div class="video-container" id="videoContainer">
+                    <div class="video-box" id="localVideoBox">
+                        <video id="localVideo" autoplay muted playsinline></video>
+                        <div class="video-label">You</div>
+                    </div>
+                    <div class="video-box hidden" id="remoteVideoBox">
+                        <video id="remoteVideo" autoplay playsinline></video>
+                        <div class="video-label">Interviewer</div>
+                    </div>
+                </div>
+
+                <div class="controls">
+                    <a id="backBtnPre" href="/" class="btn-link btn-secondary">Back to Dashboard</a>
+                    <button id="connectBtn" class="btn-primary">Connect to Interview</button>
+                    <button id="disconnectBtn" class="btn-danger hidden">End Interview</button>
+                </div>
+            </div>
+
+            <!-- Right: Questions + Transcript (shown after connect) -->
+            <div id="rightPanel" class="right-panel">
+                <div class="question-panel">
+                    <div class="question-panel-header">
+                        Question <span id="qCurrent">-</span> of <span id="qTotal">-</span>
+                    </div>
+                    <div id="questionList" class="question-list"></div>
+                </div>
+
+                <div class="transcript-panel">
+                    <div class="transcript-panel-header">Transcript</div>
+                    <div id="transcriptList" class="transcript-list">
+                        <div class="transcript-empty">Transcript will appear here...</div>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
     <script>
-        const API_BASE = window.location.origin;
-        let room = null;
-        let interviewId = null;
-        let idToken = null;
+        var API_BASE = window.location.origin;
+        var room = null;
+        var interviewId = null;
+        var idToken = null;
 
-        // Get interview ID and token from URL params or sessionStorage
-        const urlParams = new URLSearchParams(window.location.search);
+        // Get params
+        var urlParams = new URLSearchParams(window.location.search);
         interviewId = urlParams.get('interview_id');
         idToken = urlParams.get('token') || sessionStorage.getItem('idToken');
 
         if (!interviewId || !idToken) {
             window.location.href = '/';
         }
-
-        // Persist token for cross-page navigation
         sessionStorage.setItem('idToken', idToken);
+        window.history.replaceState({}, '', '?interview_id=' + interviewId);
 
-        // Clear token from URL bar for security
-        window.history.replaceState({}, '', `?interview_id=${interviewId}`);
-
-        function authHeaders(extra = {}) {
-            return { 'Authorization': `Bearer ${idToken}`, ...extra };
+        function authHeaders(extra) {
+            var h = { 'Authorization': 'Bearer ' + idToken };
+            if (extra) { for (var k in extra) h[k] = extra[k]; }
+            return h;
         }
 
-        const statusDiv = document.getElementById('status');
-        const connectBtn = document.getElementById('connectBtn');
-        const disconnectBtn = document.getElementById('disconnectBtn');
-        const backBtnPre = document.getElementById('backBtnPre');
-        const localVideo = document.getElementById('localVideo');
-        const remoteVideo = document.getElementById('remoteVideo');
-        const interviewInfo = document.getElementById('interviewInfo');
+        var statusBar = document.getElementById('statusBar');
+        var connectBtn = document.getElementById('connectBtn');
+        var disconnectBtn = document.getElementById('disconnectBtn');
+        var backBtnPre = document.getElementById('backBtnPre');
+        var localVideo = document.getElementById('localVideo');
+        var remoteVideo = document.getElementById('remoteVideo');
+        var interviewInfo = document.getElementById('interviewInfo');
+        var rightPanel = document.getElementById('rightPanel');
 
         function showStatus(message, type) {
-            statusDiv.textContent = message;
-            statusDiv.className = `status ${type}`;
-            statusDiv.classList.remove('hidden');
+            statusBar.textContent = message;
+            statusBar.className = 'status-bar ' + type;
         }
 
+        function escapeHtml(str) {
+            var div = document.createElement('div');
+            div.textContent = str || '';
+            return div.innerHTML;
+        }
+
+        // ── Question panel state ──
+        var revealedQuestions = {};
+        var interviewTotalQuestions = 0;
+        var activeQuestionIdx = -1;
+
+        function handleQuestionMessage(msg) {
+            var idx = msg.question_idx;
+
+            // Store total from agent data (always accurate)
+            if (msg.total) interviewTotalQuestions = msg.total;
+
+            if (msg.status === 'active') {
+                // Mark all previously active as answered
+                for (var k in revealedQuestions) {
+                    if (revealedQuestions[k].status === 'active') {
+                        revealedQuestions[k].status = 'answered';
+                    }
+                }
+                revealedQuestions[idx] = { text: msg.text, status: 'active' };
+                activeQuestionIdx = idx;
+            } else if (msg.status === 'answered') {
+                if (revealedQuestions[idx]) revealedQuestions[idx].status = 'answered';
+            } else if (msg.status === 'skipped') {
+                if (revealedQuestions[idx]) revealedQuestions[idx].status = 'skipped';
+            }
+
+            renderQuestionList();
+        }
+
+        function renderQuestionList() {
+            var listEl = document.getElementById('questionList');
+            listEl.innerHTML = '';
+
+            var keys = Object.keys(revealedQuestions).map(Number).sort(function(a,b){return a-b;});
+
+            for (var i = 0; i < keys.length; i++) {
+                var idx = keys[i];
+                var q = revealedQuestions[idx];
+
+                var icon = '';
+                if (q.status === 'active') icon = '&#9679;';
+                else if (q.status === 'answered') icon = '&#10003;';
+                else if (q.status === 'skipped') icon = '&#8856;';
+
+                var item = document.createElement('div');
+                item.className = 'q-item ' + q.status;
+                item.innerHTML = '<span class="q-icon">' + icon + '</span>' +
+                    '<span>Q' + (idx + 1) + ': ' + escapeHtml(q.text) + '</span>';
+                listEl.appendChild(item);
+
+                if (q.status === 'active') {
+                    item.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                }
+            }
+
+            // Header: "Question X of Y" where X = current question number, Y = total
+            document.getElementById('qCurrent').textContent = activeQuestionIdx >= 0 ? (activeQuestionIdx + 1) : '-';
+            document.getElementById('qTotal').textContent = interviewTotalQuestions || '-';
+        }
+
+        // ── Transcript panel state ──
+        var interimEntry = null;
+        var transcriptStarted = false;
+
+        function handleTranscript(msg) {
+            var list = document.getElementById('transcriptList');
+
+            // Clear placeholder on first message
+            if (!transcriptStarted) {
+                transcriptStarted = true;
+                list.innerHTML = '';
+            }
+
+            if (msg.speaker === 'candidate' && !msg.is_final) {
+                // Interim: update in-place
+                if (!interimEntry) {
+                    interimEntry = document.createElement('div');
+                    interimEntry.className = 'transcript-entry candidate interim';
+                    interimEntry.innerHTML = '<span class="speaker-label">You</span>' +
+                        '<span class="transcript-text"></span>';
+                    list.appendChild(interimEntry);
+                }
+                interimEntry.querySelector('.transcript-text').textContent = msg.text;
+                list.scrollTop = list.scrollHeight;
+                return;
+            }
+
+            // Final transcript
+            if (interimEntry && msg.speaker === 'candidate') {
+                interimEntry.classList.remove('interim');
+                interimEntry.querySelector('.transcript-text').textContent = msg.text;
+                interimEntry = null;
+            } else {
+                var entry = document.createElement('div');
+                entry.className = 'transcript-entry ' + msg.speaker;
+                entry.innerHTML = '<span class="speaker-label">' +
+                    (msg.speaker === 'interviewer' ? 'Interviewer' : 'You') +
+                    '</span><span class="transcript-text">' + escapeHtml(msg.text) + '</span>';
+                list.appendChild(entry);
+            }
+            list.scrollTop = list.scrollHeight;
+        }
+
+        // ── Interview timer ──
+        var timerRemainingSeconds = 0;
+        var timerInterval = null;
+
+        function handleTimer(msg) {
+            // Sync with authoritative value from agent
+            timerRemainingSeconds = msg.remaining_seconds;
+            var timerEl = document.getElementById('interviewTimer');
+            timerEl.classList.add('visible');
+
+            // Start local countdown if not already running
+            if (!timerInterval) {
+                timerInterval = setInterval(function() {
+                    if (timerRemainingSeconds > 0) {
+                        timerRemainingSeconds--;
+                    }
+                    updateTimerDisplay();
+                }, 1000);
+            }
+
+            updateTimerDisplay();
+        }
+
+        function updateTimerDisplay() {
+            var displayEl = document.getElementById('timerDisplay');
+            var timerEl = document.getElementById('interviewTimer');
+            var mins = Math.floor(timerRemainingSeconds / 60);
+            var secs = timerRemainingSeconds % 60;
+            displayEl.textContent = (mins < 10 ? '0' : '') + mins + ':' + (secs < 10 ? '0' : '') + secs;
+
+            timerEl.classList.remove('warning', 'critical');
+            if (timerRemainingSeconds <= 60) {
+                timerEl.classList.add('critical');
+            } else if (timerRemainingSeconds <= 300) {
+                timerEl.classList.add('warning');
+            }
+        }
+
+        // ── LiveKit connection ──
         async function connectToInterview() {
             try {
                 showStatus('Starting real-time interview...', 'connecting');
 
-                // Show interviewer pane and switch to 2-up layout immediately
+                // Show interviewer pane + right panel
                 document.getElementById('remoteVideoBox').classList.remove('hidden');
                 document.getElementById('videoContainer').classList.add('two-up');
 
-                // Start real-time interview
-                const response = await fetch(`${API_BASE}/api/v1/interviews/${interviewId}/start-realtime`, {
+                var response = await fetch(API_BASE + '/api/v1/interviews/' + interviewId + '/start-realtime', {
                     method: 'POST',
                     headers: authHeaders()
                 });
-
-                if (!response.ok) {
-                    throw new Error('Failed to start interview');
-                }
-
-                const data = await response.json();
+                if (!response.ok) throw new Error('Failed to start interview');
+                var data = await response.json();
 
                 // Get interview details
-                const interviewResponse = await fetch(`${API_BASE}/api/v1/interviews/${interviewId}`, {
+                var interviewResponse = await fetch(API_BASE + '/api/v1/interviews/' + interviewId, {
                     headers: authHeaders()
                 });
-                const interviewData = await interviewResponse.json();
+                var interviewData = await interviewResponse.json();
 
-                // Update UI
                 document.getElementById('jobTitle').textContent = interviewData.job_title;
                 document.getElementById('candidateName').textContent = interviewData.candidate_info.name;
                 document.getElementById('totalQuestions').textContent = interviewData.total_questions;
-                interviewInfo.classList.remove('hidden');
+                interviewInfo.classList.add('visible');
 
                 showStatus('Connecting to interview room...', 'connecting');
 
-                // Connect to LiveKit room
-                const token = data.candidate_token;
-                const url = data.livekit_url;
+                var token = data.candidate_token;
+                var url = data.livekit_url;
 
-                const LivekitClient = window.LivekitClient;
-                const { Room, RoomEvent, createLocalTracks } = LivekitClient;
+                var LivekitClient = window.LivekitClient;
+                var Room = LivekitClient.Room;
+                var RoomEvent = LivekitClient.RoomEvent;
+                var createLocalTracks = LivekitClient.createLocalTracks;
 
-                room = new Room({
-                    adaptiveStream: true,
-                    dynacast: true,
-                });
+                room = new Room({ adaptiveStream: true, dynacast: true });
 
-                const INTERVIEWER_IDENTITIES = new Set(['interviewer-agent', 'technical-interviewer']);
-                let remoteAudioEl = null;
+                var INTERVIEWER_IDENTITIES = new Set(['interviewer-agent', 'technical-interviewer']);
+                var remoteAudioEl = null;
 
-                room.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
-                    const identity = participant?.identity || 'unknown';
-                    console.log('Track subscribed:', { kind: track.kind, identity });
+                // Track subscribed — audio/video from interviewer
+                room.on(RoomEvent.TrackSubscribed, function(track, publication, participant) {
+                    var identity = participant ? participant.identity : 'unknown';
+                    var isInterviewer = INTERVIEWER_IDENTITIES.has(identity) || identity !== room.localParticipant.identity;
 
-                    if (track.kind === "video") {
-                        if (INTERVIEWER_IDENTITIES.has(identity) || identity !== room.localParticipant.identity) {
-                            track.attach(remoteVideo);
-                        }
-                    } else if (track.kind === "audio") {
-                        const audioEl = document.createElement('audio');
+                    if (track.kind === 'video' && isInterviewer) {
+                        track.attach(remoteVideo);
+                        showStatus('Interview in progress', 'connected');
+                    } else if (track.kind === 'audio') {
+                        var audioEl = document.createElement('audio');
                         audioEl.autoplay = true;
                         audioEl.playsInline = true;
                         document.body.appendChild(audioEl);
                         track.attach(audioEl);
-                        audioEl.play().catch(e => console.warn('Audio play failed:', e));
-
+                        audioEl.play().catch(function() {});
                         if (INTERVIEWER_IDENTITIES.has(identity)) remoteAudioEl = audioEl;
                     }
                 });
 
-                room.on(RoomEvent.TrackUnsubscribed, (track, publication, participant) => {
-                    const identity = participant?.identity || 'unknown';
-                    console.log('Track unsubscribed:', { kind: track.kind, identity });
+                room.on(RoomEvent.TrackUnsubscribed, function(track, publication, participant) {
                     track.detach();
-
-                    if (track.kind === "audio" && remoteAudioEl) {
+                    if (track.kind === 'audio' && remoteAudioEl) {
                         remoteAudioEl.pause();
                         remoteAudioEl.remove();
                         remoteAudioEl = null;
                     }
                 });
 
-                room.on(RoomEvent.ParticipantConnected, (participant) => {
-                    console.log('Participant connected:', participant.identity);
+                room.on(RoomEvent.ParticipantConnected, function(participant) {
                     if (INTERVIEWER_IDENTITIES.has(participant.identity)) {
-                        showStatus('Interviewer joined. Interview starting...', 'connected');
+                        showStatus('Interviewer joined. Setting up...', 'connecting');
                     }
                 });
 
-                room.on(RoomEvent.Disconnected, () => {
-                    showStatus('Disconnected from interview. Redirecting...', 'connecting');
+                // Data channel — questions + transcript from agent
+                room.on(RoomEvent.DataReceived, function(data, participant) {
+                    try {
+                        var msg = JSON.parse(new TextDecoder().decode(data));
+                        if (msg.type === 'question') {
+                            handleQuestionMessage(msg);
+                        } else if (msg.type === 'transcript') {
+                            handleTranscript(msg);
+                        } else if (msg.type === 'timer') {
+                            handleTimer(msg);
+                        }
+                    } catch (e) {
+                        console.warn('Failed to parse data channel message:', e);
+                    }
+                });
+
+                room.on(RoomEvent.Disconnected, function() {
+                    showStatus('Disconnected. Redirecting...', 'connecting');
                     setTimeout(function() { window.location.href = '/'; }, 2500);
                 });
 
-                room.on(RoomEvent.ConnectionFailed, (error) => {
-                    showStatus(`Connection failed: ${error.message}`, 'error');
+                room.on(RoomEvent.ConnectionFailed, function(error) {
+                    showStatus('Connection failed: ' + error.message, 'error');
                 });
 
-                room.on(RoomEvent.Reconnected, () => {
-                    showStatus('Reconnected successfully', 'connected');
+                room.on(RoomEvent.Reconnected, function() {
+                    showStatus('Reconnected', 'connected');
                 });
 
-                // Connect to room
+                // Connect
                 await room.prepareConnection(url, token);
                 await room.connect(url, token);
 
-                // Get local video/audio
-                const localTracks = await createLocalTracks({
-                    audio: {
-                        echoCancellation: true,
-                        noiseSuppression: true,
-                        autoGainControl: true
-                    },
-                    video: {
-                        width: { ideal: 1280 },
-                        height: { ideal: 720 },
-                        frameRate: { ideal: 30 }
-                    }
+                // Local tracks
+                var localTracks = await createLocalTracks({
+                    audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+                    video: { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } }
                 });
 
-                for (const track of localTracks) {
-                    await room.localParticipant.publishTrack(track);
-                    if (track.kind === 'video') {
-                        track.attach(localVideo);
+                for (var i = 0; i < localTracks.length; i++) {
+                    await room.localParticipant.publishTrack(localTracks[i]);
+                    if (localTracks[i].kind === 'video') {
+                        localTracks[i].attach(localVideo);
                     }
                 }
 
-                showStatus('Connected! Interview in progress...', 'connected');
+                // Phase 1: connected, waiting for interviewer
+                showStatus('Connected. Waiting for interviewer to join...', 'connecting');
                 connectBtn.classList.add('hidden');
                 backBtnPre.classList.add('hidden');
                 disconnectBtn.classList.remove('hidden');
+                rightPanel.classList.add('visible');
 
             } catch (error) {
                 console.error('Error connecting:', error);
-                showStatus(`Error: ${error.message}`, 'error');
+                showStatus('Error: ' + error.message, 'error');
             }
         }
 
@@ -414,7 +686,7 @@
             showStatus('Interview completed! Redirecting to dashboard...', 'connected');
 
             try {
-                await fetch(`${API_BASE}/api/v1/interviews/${interviewId}/complete`, {
+                await fetch(API_BASE + '/api/v1/interviews/' + interviewId + '/complete', {
                     method: 'POST',
                     headers: authHeaders()
                 });
@@ -422,9 +694,7 @@
                 console.error('Error completing interview:', e);
             }
 
-            setTimeout(function() {
-                window.location.href = '/';
-            }, 2500);
+            setTimeout(function() { window.location.href = '/'; }, 2500);
         }
 
         connectBtn.addEventListener('click', connectToInterview);

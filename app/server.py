@@ -9,6 +9,7 @@ import re
 import uuid
 import json
 import logging
+from pathlib import Path
 from datetime import datetime
 from typing import Optional, Dict, List
 
@@ -512,12 +513,28 @@ async def complete_interview(interview_id: str, background_tasks: BackgroundTask
     if not interview:
         raise HTTPException(status_code=404, detail="Interview not found")
     session = interview["session"]
-    
-    if not session.interview_active:
-        raise HTTPException(status_code=400, detail="Interview is not active")
-    
-    # End interview
-    session.end_interview()
+
+    # Load agent-persisted answers (agent runs in separate container — answers are on disk)
+    answers_file = Path(INTERVIEW_STORE_DIR) / f"{interview_id}_answers.json"
+    if answers_file.exists():
+        try:
+            agent_data = json.loads(answers_file.read_text())
+            session.answers = agent_data.get("answers", [])
+            session.current_question_idx = agent_data.get("current_question_idx", 0)
+            if agent_data.get("start_time"):
+                session.start_time = datetime.fromisoformat(agent_data["start_time"])
+            if agent_data.get("end_time"):
+                session.end_time = datetime.fromisoformat(agent_data["end_time"])
+            session.interview_active = agent_data.get("interview_active", False)
+            logger.info(f"Loaded {len(session.answers)} answers from agent for {interview_id}")
+        except Exception as e:
+            logger.warning(f"Failed to load agent answers for {interview_id}: {e}")
+
+    # End interview (if agent hasn't already)
+    if session.interview_active:
+        session.end_interview()
+    elif not session.end_time:
+        session.end_time = datetime.now()
     _update_interview_status(interview_id, "completed")
     
     # Score all answers

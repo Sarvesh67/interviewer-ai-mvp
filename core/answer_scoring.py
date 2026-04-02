@@ -15,7 +15,8 @@ logger = logging.getLogger("answer_scoring")
 def score_candidate_answer(
     question: Dict,
     candidate_answer: str,
-    follow_up_answer: Optional[str] = None
+    follow_up_answer: Optional[str] = None,
+    conversation: Optional[list] = None
 ) -> Dict:
     """
     Score a single candidate answer using Gemini
@@ -42,18 +43,29 @@ def score_candidate_answer(
     genai.configure(api_key=settings.GEMINI_API_KEY)
     model = genai.GenerativeModel(settings.GEMINI_SCORING_MODEL)
 
-    # Combine main answer and follow-up if available
-    full_answer = candidate_answer
-    if follow_up_answer:
-        full_answer = f"{candidate_answer}\n\nFollow-up: {follow_up_answer}"
+    # Build conversation context if available, otherwise use flat answer
+    if conversation and len(conversation) > 0:
+        convo_lines = []
+        for turn in conversation:
+            role_label = "Interviewer" if turn.get("role") == "interviewer" else "Candidate"
+            turn_type = turn.get("type", "")
+            type_tag = f" ({turn_type})" if turn_type == "follow_up" else ""
+            convo_lines.append(f"{role_label}{type_tag}: {turn.get('text', '')}")
+        full_answer = "\n".join(convo_lines)
+    else:
+        full_answer = candidate_answer
+        if follow_up_answer:
+            full_answer = f"{candidate_answer}\n\nFollow-up: {follow_up_answer}"
 
     scoring_prompt = f"""Evaluate this candidate's answer to a technical interview question.
 
 QUESTION:
 {question.get('question', 'N/A')}
 
-CANDIDATE ANSWER:
+FULL CONVERSATION THREAD:
 {full_answer}
+
+Note: If follow-up questions were asked, consider whether the candidate needed prompting to give a complete answer. A candidate who gives a comprehensive first answer should score higher on communication than one who needed multiple follow-ups.
 
 EXPECTED COMPETENCIES:
 {', '.join(question.get('expected_competencies', []))}
@@ -144,11 +156,30 @@ def score_all_answers(
         question = questions[question_idx]
         candidate_answer = answer_obj.get("transcript", "")
         follow_up = answer_obj.get("follow_up_transcript")
+        conversation = answer_obj.get("conversation", [])
+
+        # Skip scoring for skipped questions
+        if answer_obj.get("skipped"):
+            scores.append({
+                "question_idx": question_idx,
+                "question": question.get("question", ""),
+                "score": 0,
+                "reasoning": "Question was skipped by the candidate.",
+                "strengths": [],
+                "weaknesses": ["Question not attempted"],
+                "depth_level": "surface",
+                "communication_clarity": "poor",
+                "technical_accuracy": "incorrect",
+                "follow_up_recommended": False,
+                "skipped": True
+            })
+            continue
 
         score = score_candidate_answer(
             question=question,
             candidate_answer=candidate_answer,
-            follow_up_answer=follow_up
+            follow_up_answer=follow_up,
+            conversation=conversation
         )
 
         # Add metadata

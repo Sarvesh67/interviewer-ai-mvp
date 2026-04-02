@@ -47,7 +47,7 @@ if HAS_SETTINGS_CONFIG:
         # Google Gemini API Configuration
         GEMINI_API_KEY: Optional[str] = None
         GEMINI_MODEL: str = "gemini-3.1-pro-preview"  # For question generation + domain extraction
-        GEMINI_FOLLOW_UP_MODEL: str = "gemini-2.5-flash"  # For follow-up question generation
+        GEMINI_FOLLOW_UP_MODEL: str = "gemini-2.0-flash"  # For real-time conversation (speed over depth)
         GEMINI_SCORING_MODEL: str = "gemini-3.1-pro-preview"  # For answer scoring
 
         # LiveKit Configuration
@@ -79,7 +79,7 @@ else:
         # Google Gemini API Configuration
         GEMINI_API_KEY: Optional[str] = None
         GEMINI_MODEL: str = "gemini-3.1-pro-preview"  # For question generation + domain extraction
-        GEMINI_FOLLOW_UP_MODEL: str = "gemini-2.5-flash"  # For follow-up question generation
+        GEMINI_FOLLOW_UP_MODEL: str = "gemini-2.0-flash"  # For real-time conversation (speed over depth)
         GEMINI_SCORING_MODEL: str = "gemini-3.1-pro-preview"  # For answer scoring
         
         # LiveKit Configuration
