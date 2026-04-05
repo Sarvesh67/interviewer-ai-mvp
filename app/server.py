@@ -505,10 +505,56 @@ async def submit_answer(interview_id: str, answer: AnswerSubmission, user: dict 
     }
 
 
+def _generate_report_background(interview_id: str):
+    """Background task: score answers and generate report, then update status."""
+    try:
+        interview = get_interview(interview_id)
+        if not interview:
+            logger.error(f"Background report: interview {interview_id} not found")
+            return
+        session = interview["session"]
+
+        # Score all answers
+        scores = score_all_answers(
+            answers=session.answers,
+            questions=interview["questions"]
+        )
+        interview["scores"] = scores
+
+        # Generate report
+        report = generate_interview_report(
+            candidate_info=interview["candidate_info"],
+            answers=session.answers,
+            scores=scores,
+            questions=interview["questions"],
+            domain_knowledge=interview["domain_knowledge"],
+            interview_duration_minutes=session.get_duration_minutes()
+        )
+        interview["report"] = report
+
+        # Save report to file
+        report_path = os.path.join(UPLOAD_DIR, f"{interview_id}_report.json")
+        with open(report_path, "w", encoding="utf-8") as f:
+            json.dump(report, f, indent=2, ensure_ascii=False)
+
+        # Also save formatted text version
+        text_report = format_report_for_display(report)
+        text_report_path = os.path.join(UPLOAD_DIR, f"{interview_id}_report.txt")
+        with open(text_report_path, "w", encoding="utf-8") as f:
+            f.write(text_report)
+
+        _update_interview_status(interview_id, "completed")
+        logger.info(f"Report generated for {interview_id}")
+
+    except Exception as e:
+        logger.error(f"Background report generation failed for {interview_id}: {e}", exc_info=True)
+        _update_interview_status(interview_id, "completed")
+
+
 @app.post("/api/v1/interviews/{interview_id}/complete")
 async def complete_interview(interview_id: str, background_tasks: BackgroundTasks, user: dict = Depends(get_current_user)):
     validate_interview_id(interview_id)
-    """Complete interview and generate report"""
+    """Complete interview and kick off report generation in background"""
     interview = get_interview(interview_id)
     if not interview:
         raise HTTPException(status_code=404, detail="Interview not found")
@@ -535,51 +581,16 @@ async def complete_interview(interview_id: str, background_tasks: BackgroundTask
         session.end_interview()
     elif not session.end_time:
         session.end_time = datetime.now()
-    _update_interview_status(interview_id, "completed")
-    
-    # Score all answers
-    try:
-        scores = score_all_answers(
-            answers=session.answers,
-            questions=interview["questions"]
-        )
-        interview["scores"] = scores
-    except Exception as e:
-        logger.error(f"Answer scoring failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Answer scoring failed. Check server logs.")
-    
-    # Generate report
-    try:
-        report = generate_interview_report(
-            candidate_info=interview["candidate_info"],
-            answers=session.answers,
-            scores=scores,
-            questions=interview["questions"],
-            domain_knowledge=interview["domain_knowledge"],
-            interview_duration_minutes=session.get_duration_minutes()
-        )
-        interview["report"] = report
-        
-        # Save report to file
-        report_path = os.path.join(UPLOAD_DIR, f"{interview_id}_report.json")
-        with open(report_path, "w", encoding="utf-8") as f:
-            json.dump(report, f, indent=2, ensure_ascii=False)
-        
-        # Also save formatted text version
-        text_report = format_report_for_display(report)
-        text_report_path = os.path.join(UPLOAD_DIR, f"{interview_id}_report.txt")
-        with open(text_report_path, "w", encoding="utf-8") as f:
-            f.write(text_report)
-        
-    except Exception as e:
-        logger.error(f"Report generation failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Report generation failed. Check server logs.")
-    
+
+    # Mark as generating — dashboard will show loading state
+    _update_interview_status(interview_id, "generating_report")
+
+    # Kick off scoring + report generation in background
+    background_tasks.add_task(_generate_report_background, interview_id)
+
     return {
         "interview_id": interview_id,
-        "status": "completed",
-        "report": report,
-        "report_path": report_path
+        "status": "generating_report",
     }
 
 

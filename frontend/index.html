@@ -99,6 +99,8 @@
         .badge.created { background: #e9ecef; color: #666; }
         .badge.in_progress { background: #fff3cd; color: #856404; }
         .badge.completed { background: #d4edda; color: #155724; }
+        .badge.generating_report { background: #d1ecf1; color: #0c5460; animation: pulse-badge 1.5s ease-in-out infinite; }
+        @keyframes pulse-badge { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
 
         .interview-card .actions { display: flex; gap: 8px; flex-shrink: 0; margin-left: 12px; }
 
@@ -295,6 +297,7 @@
     <script>
         var API_BASE = window.location.origin;
         var idToken = null;
+        var _pollTimer = null;
         var userName = null;
         var userEmail = null;
         var nonce = crypto.randomUUID();
@@ -373,6 +376,7 @@
                 }
 
                 listEl.innerHTML = '';
+                var hasGenerating = false;
                 for (var i = 0; i < list.length; i++) {
                     var iv = list[i];
                     var card = document.createElement('div');
@@ -383,7 +387,9 @@
                     }) : '';
 
                     var badgeClass = (iv.status || 'created').replace('-', '_');
-                    var statusLabel = iv.status === 'in_progress' ? 'In Progress' : (iv.status || 'created');
+                    var statusLabel = iv.status === 'in_progress' ? 'In Progress'
+                        : iv.status === 'generating_report' ? 'Generating Report...'
+                        : (iv.status || 'created');
 
                     var html = '<div class="info">' +
                         '<div class="title">' + escapeHtml(iv.job_title || 'Untitled') +
@@ -397,6 +403,9 @@
                     if (iv.status === 'completed' && iv.has_report) {
                         html += '<button class="btn-sm btn-report" onclick="viewReport(\'' + iv.interview_id + '\')">Report</button>';
                     }
+                    if (iv.status === 'generating_report') {
+                        hasGenerating = true;
+                    }
                     html += '</div>';
 
                     card.innerHTML = html;
@@ -404,6 +413,14 @@
                 }
 
                 dashboardEl.classList.add('visible');
+
+                // Auto-poll while any interview is generating a report
+                if (hasGenerating && !_pollTimer) {
+                    _pollTimer = setInterval(loadDashboard, 5000);
+                } else if (!hasGenerating && _pollTimer) {
+                    clearInterval(_pollTimer);
+                    _pollTimer = null;
+                }
             } catch (err) {
                 console.error('Failed to load interviews:', err);
             }
