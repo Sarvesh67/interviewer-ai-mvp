@@ -632,6 +632,8 @@
 
                 room.on(RoomEvent.ParticipantConnected, function(participant) {
                     if (INTERVIEWER_IDENTITIES.has(participant.identity)) {
+                        console.log('[InterviewRoom] Interviewer joined:', participant.identity);
+                        if (interviewerJoinTimeout) clearTimeout(interviewerJoinTimeout);
                         showStatus('Interviewer joined. Setting up...', 'connecting');
                     }
                 });
@@ -693,6 +695,27 @@
                 disconnectBtn.classList.remove('hidden');
                 rightPanel.classList.add('visible');
 
+                // Check if interviewer already joined before event listeners were set up
+                room.remoteParticipants.forEach(function(participant) {
+                    if (INTERVIEWER_IDENTITIES.has(participant.identity)) {
+                        console.log('[InterviewRoom] Interviewer already in room:', participant.identity);
+                        showStatus('Interviewer joined. Setting up...', 'connecting');
+                    }
+                });
+
+                // Warn if interviewer hasn't joined after 60 seconds
+                var interviewerJoinTimeout = setTimeout(function() {
+                    if (room && room.state === 'connected') {
+                        var interviewerFound = false;
+                        room.remoteParticipants.forEach(function(p) {
+                            if (INTERVIEWER_IDENTITIES.has(p.identity)) interviewerFound = true;
+                        });
+                        if (!interviewerFound) {
+                            console.warn('[InterviewRoom] Interviewer has not joined after 60s. Room:', room.name, 'State:', room.state, 'Participants:', room.remoteParticipants.size);
+                        }
+                    }
+                }, 60000);
+
             } catch (error) {
                 console.error('Error connecting:', error);
                 showStatus('Error: ' + error.message, 'error');
@@ -706,26 +729,17 @@
             connectBtn.classList.add('hidden');
             disconnectBtn.classList.add('hidden');
 
-            showStatus('Interview completed! Generating report...', 'connected');
-
-            try {
-                var resp = await fetch(API_BASE + '/api/v1/interviews/' + interviewId + '/complete', {
-                    method: 'POST',
-                    headers: authHeaders()
-                });
-                if (!resp.ok) {
-                    showStatus('Interview completed, but report generation failed. You can retry from the dashboard.', 'error');
-                    setTimeout(function() { window.location.href = '/'; }, 5000);
-                    return;
-                }
-            } catch (e) {
+            // Fire the complete request (report generates in background on server)
+            fetch(API_BASE + '/api/v1/interviews/' + interviewId + '/complete', {
+                method: 'POST',
+                headers: authHeaders(),
+                keepalive: true
+            }).catch(function(e) {
                 console.error('Error completing interview:', e);
-                showStatus('Interview completed, but could not reach the server. You can retry from the dashboard.', 'error');
-                setTimeout(function() { window.location.href = '/'; }, 5000);
-                return;
-            }
+            });
 
-            setTimeout(function() { window.location.href = '/'; }, 2500);
+            // Redirect to dashboard immediately — report loading shows there
+            window.location.href = '/';
         }
 
         async function disconnect() {

@@ -337,7 +337,9 @@ class RealtimeInterviewAgent:
                 logger.warning(f"Could not configure Hedra avatar: {e}")
 
             # Start agent session
+            logger.info(f"[{self.ctx.room.name}] Starting agent session...")
             await self.agent_session.start(agent=self.agent, room=self.ctx.room)
+            logger.info(f"[{self.ctx.room.name}] Agent session started successfully")
 
             # Start Hedra avatar
             if self.hedra_avatar:
@@ -686,10 +688,23 @@ class RealtimeInterviewAgent:
 
 async def entrypoint(ctx: JobContext):
     """LiveKit agent entrypoint — called when a participant joins the room"""
-    logger.info("Interview agent entrypoint called")
+    logger.info(f"Interview agent entrypoint called for room: {ctx.room.name}")
 
-    await ctx.connect()
-    await ctx.wait_for_participant()
+    try:
+        logger.info(f"[{ctx.room.name}] Connecting to room...")
+        await ctx.connect()
+        logger.info(f"[{ctx.room.name}] Connected to room successfully")
+    except Exception as e:
+        logger.error(f"[{ctx.room.name}] Failed to connect to room: {e}")
+        raise
+
+    try:
+        logger.info(f"[{ctx.room.name}] Waiting for participant...")
+        await ctx.wait_for_participant()
+        logger.info(f"[{ctx.room.name}] Participant joined")
+    except Exception as e:
+        logger.error(f"[{ctx.room.name}] Error waiting for participant: {e}")
+        raise
 
     interview_id = ctx.room.name
 
