@@ -191,8 +191,10 @@ class TechnicalInterviewSession:
 
         prompt = f"""Evaluate a candidate's interview answer. Classify as exactly ONE of:
 - "answered" — substantive attempt that addresses the question
-- "follow_up" — vague or partial, a follow-up would help draw out detail
-- "unanswered" — deflected, said "I don't know", or didn't attempt to answer
+- "follow_up" — partial, vague, or rambling; a follow-up would help draw out detail
+- "unanswered" — explicitly declined ("I don't know", "skip"), OR said nothing relevant at all
+
+IMPORTANT: If the candidate said ANYTHING related to the topic (even vaguely), prefer "follow_up" over "unanswered". Reserve "unanswered" for explicit refusals or completely off-topic responses.
 
 QUESTION: {question_text}
 ANSWER: {answer_text}

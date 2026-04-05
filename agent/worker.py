@@ -392,7 +392,6 @@ class RealtimeInterviewAgent:
         }]
         self.current_answer_text = ""
         self.follow_up_count = 0
-        self._awaiting_answer = True
         self._expecting_follow_up = False
         self._nudge_given = False
 
@@ -401,6 +400,7 @@ class RealtimeInterviewAgent:
         spoken_text = f"Question {idx + 1} of {len(self.session.questions)}: {question_text}"
         await self._send_question(idx, question_text, "active")
         await self._say_with_live_transcript(spoken_text, allow_interruptions=False)
+        self._awaiting_answer = True
 
     async def _handle_answer(self, transcript: str):
         """
@@ -490,6 +490,14 @@ class RealtimeInterviewAgent:
                 await self._process_complete_answer()
         except asyncio.CancelledError:
             pass  # timer was reset by new speech — expected
+        except Exception as e:
+            logger.error(f"Answer processing failed: {e}")
+            # Don't leave the interview stuck — submit what we have and move on
+            if self._awaiting_answer:
+                self._awaiting_answer = False
+                self.session.submit_answer(conversation=self.current_conversation)
+                self.session.persist_answers(self.ctx.room.name)
+                await self._ask_current_question()
 
     async def _process_complete_answer(self):
         """Called after silence timeout. Evaluate answer and decide next action."""
@@ -617,11 +625,13 @@ class RealtimeInterviewAgent:
         await self._publish_data({"type": "interview_end"})
 
         await asyncio.sleep(2)
-        self._done_event.set()
+
         if self.agent_session:
             await self.agent_session.aclose()
             self.agent_session = None
             self.hedra_avatar = None
+
+        self._done_event.set()
 
         logger.info("Interview completed")
 
@@ -664,6 +674,12 @@ class RealtimeInterviewAgent:
             logger.error(f"Error running interview agent: {e}")
             raise
         finally:
+            if self.hedra_avatar:
+                try:
+                    await self.hedra_avatar.aclose()
+                except Exception:
+                    pass
+                self.hedra_avatar = None
             if self.agent_session:
                 await self.agent_session.aclose()
 
@@ -710,6 +726,7 @@ if __name__ == "__main__":
     cli.run_app(
         WorkerOptions(
             entrypoint_fnc=entrypoint,
+            agent_name="interviewer",
             ws_url=settings.LIVEKIT_URL,
             api_key=settings.LIVEKIT_API_KEY,
             api_secret=settings.LIVEKIT_API_SECRET,

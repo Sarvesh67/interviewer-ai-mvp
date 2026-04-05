@@ -6,6 +6,7 @@ import json
 import logging
 import re
 import google.generativeai as genai
+from google.generativeai.types import HarmCategory, HarmBlockThreshold
 from config import settings
 from typing import Dict, List, Optional
 
@@ -105,14 +106,14 @@ Return ONLY the JSON object, no other text.
     try:
         generation_config = {
             "temperature": 0.3,  # Lower temp for consistent scoring
-            "max_output_tokens": 1024,
+            "max_output_tokens": 2048,
         }
-        safety_settings = [
-            {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
-            {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
-            {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
-            {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
-        ]
+        safety_settings = {
+            HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+            HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+            HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+            HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
+        }
         response = model.generate_content(
             scoring_prompt,
             generation_config=generation_config,
@@ -120,7 +121,7 @@ Return ONLY the JSON object, no other text.
         )
 
         # Handle blocked responses (safety filter)
-        if not response.candidates or not response.candidates[0].content.parts:
+        if (not response.candidates or not response.candidates[0].content or not response.candidates[0].content.parts):
             logger.warning(f"Gemini response blocked (finish_reason: {getattr(response.candidates[0], 'finish_reason', 'unknown') if response.candidates else 'no candidates'})")
             return {
                 "score": 0,
