@@ -62,6 +62,7 @@ class RealtimeInterviewAgent:
         self._interview_timer: Optional[asyncio.Task] = None
         self._max_interview_minutes = settings.MAX_INTERVIEW_DURATION_MINUTES  # 45 min default
         self._interview_start_time: Optional[datetime] = None
+        self._done_event = asyncio.Event()
 
     # ──────────────────────────────────────────────
     # Data channel helpers
@@ -141,6 +142,27 @@ class RealtimeInterviewAgent:
         final_text = " ".join(spoken_words) if spoken_words else text
         await self._send_transcript("interviewer", final_text, is_final=True)
 
+    async def _generate_follow_up(self, question_text: str) -> str:
+        """Generate a follow-up question using Gemini directly (bypasses agent pipeline)."""
+        import google.generativeai as genai
+        genai.configure(api_key=settings.GEMINI_API_KEY)
+        model = genai.GenerativeModel(settings.GEMINI_FOLLOW_UP_MODEL)
+
+        prompt = (
+            f"You are an interviewer. The candidate gave a vague or incomplete answer.\n"
+            f"QUESTION: {question_text}\n"
+            f"ANSWER: {self.current_answer_text}\n\n"
+            f"Ask ONE brief follow-up question to get more detail. Keep it short and to the point. "
+            f"Reply with ONLY the follow-up question, nothing else."
+        )
+
+        try:
+            response = await model.generate_content_async(prompt)
+            return response.text.strip()
+        except Exception as e:
+            logger.warning(f"Follow-up generation failed: {e}")
+            return self.session.get_follow_up_question(self.current_answer_text)
+
     # ──────────────────────────────────────────────
     # Navigation intent detection
     # ──────────────────────────────────────────────
@@ -192,12 +214,6 @@ class RealtimeInterviewAgent:
                 api_key=settings.DEEPGRAM_API_KEY,
             )
 
-            # LLM — Gemini Flash Lite for fast real-time conversation
-            llm_model = google.LLM(
-                model=settings.GEMINI_FOLLOW_UP_MODEL,
-                api_key=settings.GEMINI_API_KEY,
-            )
-
             # Turn detection — prefer EOUModel, fall back to STT-based
             turn_det = "stt"
             try:
@@ -244,7 +260,6 @@ class RealtimeInterviewAgent:
             self.agent_session = agents.AgentSession(
                 stt=stt,
                 turn_detection=turn_det,
-                llm=llm_model,
                 tts=tts,
             )
 
@@ -377,7 +392,6 @@ class RealtimeInterviewAgent:
         }]
         self.current_answer_text = ""
         self.follow_up_count = 0
-        self._awaiting_answer = True
         self._expecting_follow_up = False
         self._nudge_given = False
 
@@ -386,6 +400,7 @@ class RealtimeInterviewAgent:
         spoken_text = f"Question {idx + 1} of {len(self.session.questions)}: {question_text}"
         await self._send_question(idx, question_text, "active")
         await self._say_with_live_transcript(spoken_text, allow_interruptions=False)
+        self._awaiting_answer = True
 
     async def _handle_answer(self, transcript: str):
         """
@@ -475,6 +490,14 @@ class RealtimeInterviewAgent:
                 await self._process_complete_answer()
         except asyncio.CancelledError:
             pass  # timer was reset by new speech — expected
+        except Exception as e:
+            logger.error(f"Answer processing failed: {e}")
+            # Don't leave the interview stuck — submit what we have and move on
+            if self._awaiting_answer:
+                self._awaiting_answer = False
+                self.session.submit_answer(conversation=self.current_conversation)
+                self.session.persist_answers(self.ctx.room.name)
+                await self._ask_current_question()
 
     async def _process_complete_answer(self):
         """Called after silence timeout. Evaluate answer and decide next action."""
@@ -492,15 +515,15 @@ class RealtimeInterviewAgent:
 
         if verdict == "follow_up":
             self.follow_up_count += 1
-            self._expecting_follow_up = True
-            self.agent_session.generate_reply(
-                user_input=self.current_answer_text,
-                instructions=(
-                    "You are an interviewer asking a brief follow-up question to get more detail "
-                    "from the candidate. Keep it short and to the point."
-                ),
-                allow_interruptions=True,
-            )
+            follow_up_text = await self._generate_follow_up(question_text)
+            self.current_conversation.append({
+                "role": "interviewer",
+                "type": "follow_up",
+                "text": follow_up_text,
+                "timestamp": datetime.now().isoformat(),
+            })
+            await self._say_with_live_transcript(follow_up_text, allow_interruptions=True)
+            self._reset_answer_timer()
             return
 
         if verdict == "unanswered" and not self._nudge_given:
@@ -602,8 +625,13 @@ class RealtimeInterviewAgent:
         await self._publish_data({"type": "interview_end"})
 
         await asyncio.sleep(2)
+
         if self.agent_session:
             await self.agent_session.aclose()
+            self.agent_session = None
+            self.hedra_avatar = None
+
+        self._done_event.set()
 
         logger.info("Interview completed")
 
@@ -633,22 +661,25 @@ class RealtimeInterviewAgent:
 
             self.agent_session.on("user_input_transcribed", on_user_input_transcribed)
 
-            # Wait for session close
-            try:
-                close_event = asyncio.Event()
+            # Also unblock if agent session closes externally (e.g. participant disconnect)
+            def on_close(event: agents.CloseEvent):
+                self._done_event.set()
 
-                def on_close(event: agents.CloseEvent):
-                    close_event.set()
+            self.agent_session.on("close", on_close)
 
-                self.agent_session.on("close", on_close)
-                await close_event.wait()
-            except asyncio.CancelledError:
-                pass
+            # Wait until interview ends or session closes
+            await self._done_event.wait()
 
         except Exception as e:
             logger.error(f"Error running interview agent: {e}")
             raise
         finally:
+            if self.hedra_avatar:
+                try:
+                    await self.hedra_avatar.aclose()
+                except Exception:
+                    pass
+                self.hedra_avatar = None
             if self.agent_session:
                 await self.agent_session.aclose()
 
@@ -695,6 +726,7 @@ if __name__ == "__main__":
     cli.run_app(
         WorkerOptions(
             entrypoint_fnc=entrypoint,
+            agent_name="interviewer",
             ws_url=settings.LIVEKIT_URL,
             api_key=settings.LIVEKIT_API_KEY,
             api_secret=settings.LIVEKIT_API_SECRET,

@@ -10,8 +10,8 @@ from datetime import datetime, timedelta
 
 from livekit import api, rtc
 from livekit.agents import JobContext
-# add this import at the top
 from livekit.protocol.room import CreateRoomRequest
+from livekit.protocol.agent_dispatch import CreateAgentDispatchRequest
 
 import json
 from pathlib import Path
@@ -60,10 +60,20 @@ class RealtimeInterviewManager:
                 CreateRoomRequest(
                     name=interview_id,
                     empty_timeout=300,  # 5 minutes
-                    max_participants=2  # Candidate + Interviewer
+                    max_participants=4  # Candidate + Agent + Hedra avatar + buffer
     )
 )
-            
+
+            # Explicitly dispatch agent to the room — matches agent_name="interviewer"
+            try:
+                await self.livekit_api.agent_dispatch.create_dispatch(
+                    CreateAgentDispatchRequest(room=interview_id, agent_name="interviewer")
+                )
+                logger.info(f"Agent dispatched to room {interview_id}")
+            except Exception as e:
+                logger.error(f"Failed to dispatch agent to room {interview_id}: {e}")
+                raise
+
             # Create access token for candidate (expires in 1 hour)
             candidate_token = api.AccessToken(
                 api_key=settings.LIVEKIT_API_KEY,
@@ -102,6 +112,8 @@ class RealtimeInterviewManager:
 
             agent_token_str = agent_token.to_jwt()
             
+            await self.livekit_api.aclose()
+
             return {
                 "room_name": interview_id,
                 "room_url": settings.LIVEKIT_URL,
@@ -109,9 +121,10 @@ class RealtimeInterviewManager:
                 "agent_token": agent_token_str,
                 "candidate_join_url": f"{settings.LIVEKIT_URL}?token={candidate_token_str}",
             }
-            
+
         except Exception as e:
             logger.error(f"Error creating interview room: {e}")
+            await self.livekit_api.aclose()
             raise
     
     async def start_interview_agent(

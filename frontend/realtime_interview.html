@@ -709,12 +709,20 @@
             showStatus('Interview completed! Generating report...', 'connected');
 
             try {
-                await fetch(API_BASE + '/api/v1/interviews/' + interviewId + '/complete', {
+                var resp = await fetch(API_BASE + '/api/v1/interviews/' + interviewId + '/complete', {
                     method: 'POST',
                     headers: authHeaders()
                 });
+                if (!resp.ok) {
+                    showStatus('Interview completed, but report generation failed. You can retry from the dashboard.', 'error');
+                    setTimeout(function() { window.location.href = '/'; }, 5000);
+                    return;
+                }
             } catch (e) {
                 console.error('Error completing interview:', e);
+                showStatus('Interview completed, but could not reach the server. You can retry from the dashboard.', 'error');
+                setTimeout(function() { window.location.href = '/'; }, 5000);
+                return;
             }
 
             setTimeout(function() { window.location.href = '/'; }, 2500);
