@@ -24,7 +24,7 @@ from core.domain_extraction import extract_domain_knowledge
 from core.question_generator import generate_technical_questions, validate_questions
 from integrations.hedra import create_hedra_image_avatar, create_interviewer_persona
 from core.session import TechnicalInterviewSession
-from core.answer_scoring import score_all_answers, calculate_overall_metrics
+from core.answer_scoring import score_all_answers, score_all_answers_batch, calculate_overall_metrics
 from core.report_generator import generate_interview_report, format_report_for_display
 from agent.manager import RealtimeInterviewManager, register_interview_session
 
@@ -515,7 +515,7 @@ def _generate_report_background(interview_id: str):
         session = interview["session"]
 
         # Score all answers
-        scores = score_all_answers(
+        scores = score_all_answers_batch(
             answers=session.answers,
             questions=interview["questions"]
         )
