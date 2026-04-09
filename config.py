@@ -58,6 +58,9 @@ if HAS_SETTINGS_CONFIG:
         # Deepgram Configuration (STT/TTS)
         DEEPGRAM_API_KEY: Optional[str] = None
 
+        # Database
+        DATABASE_URL: str = "postgresql+asyncpg://interviewer:interviewer@localhost:5432/interviewer"
+
         # Application Settings
         UPLOAD_DIR: str = "uploads"
         MAX_INTERVIEW_DURATION_MINUTES: int = 45
@@ -90,6 +93,9 @@ else:
         # Deepgram Configuration (STT/TTS)
         DEEPGRAM_API_KEY: Optional[str] = None
         
+        # Database
+        DATABASE_URL: str = "postgresql+asyncpg://interviewer:interviewer@localhost:5432/interviewer"
+
         # Application Settings
         UPLOAD_DIR: str = "uploads"
         MAX_INTERVIEW_DURATION_MINUTES: int = 45

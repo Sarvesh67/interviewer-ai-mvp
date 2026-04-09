@@ -216,6 +216,181 @@ def score_all_answers(
     return scores
 
 
+def score_all_answers_batch(
+    answers: List[Dict],
+    questions: List[Dict]
+) -> List[Dict]:
+    """
+    Score all candidate answers in a single batched LLM call (or chunked if N > 15).
+    Falls back to score_all_answers() per-answer if the batch call fails.
+
+    Reduces N Gemini calls to 1 (or ceil(N/10) for large sets).
+    Uses response_mime_type="application/json" + response_schema for strict output.
+    """
+    if not settings.GEMINI_API_KEY:
+        raise ValueError("GEMINI_API_KEY is not configured. Please set it in .env file")
+
+    results: List[Optional[Dict]] = [None] * len(answers)
+
+    # Resolve skipped answers locally — no LLM needed
+    to_score = []  # list of (result_index, answer_obj, question)
+    for i, answer_obj in enumerate(answers):
+        question_idx = answer_obj.get("question_idx", 0)
+        if question_idx >= len(questions):
+            raise ValueError(f"Question index {question_idx} out of range")
+        question = questions[question_idx]
+
+        if answer_obj.get("skipped"):
+            results[i] = {
+                "question_idx": question_idx,
+                "question": question.get("question", ""),
+                "score": 0,
+                "reasoning": "Question was skipped by the candidate.",
+                "strengths": [],
+                "weaknesses": ["Question not attempted"],
+                "depth_level": "surface",
+                "communication_clarity": "poor",
+                "technical_accuracy": "incorrect",
+                "follow_up_recommended": False,
+                "skipped": True,
+            }
+        else:
+            to_score.append((i, answer_obj, question))
+
+    if not to_score:
+        return [r for r in results if r is not None]
+
+    genai.configure(api_key=settings.GEMINI_API_KEY)
+    model = genai.GenerativeModel(settings.GEMINI_SCORING_MODEL)
+
+    safety_settings = {
+        HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+        HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+        HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+        HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
+    }
+
+    # Schema enforces exact output shape — no regex parsing needed
+    response_schema = {
+        "type": "array",
+        "items": {
+            "type": "object",
+            "properties": {
+                "score": {"type": "integer"},
+                "reasoning": {"type": "string"},
+                "strengths": {"type": "array", "items": {"type": "string"}},
+                "weaknesses": {"type": "array", "items": {"type": "string"}},
+                "depth_level": {"type": "string", "enum": ["surface", "intermediate", "deep"]},
+                "communication_clarity": {"type": "string", "enum": ["poor", "fair", "good", "excellent"]},
+                "technical_accuracy": {"type": "string", "enum": ["incorrect", "partial", "correct"]},
+                "follow_up_recommended": {"type": "boolean"},
+                "follow_up_question": {"type": "string"},
+            },
+            "required": [
+                "score", "reasoning", "strengths", "weaknesses",
+                "depth_level", "communication_clarity", "technical_accuracy",
+                "follow_up_recommended",
+            ],
+        },
+    }
+
+    CHUNK_SIZE = 10
+    for chunk_start in range(0, len(to_score), CHUNK_SIZE):
+        chunk = to_score[chunk_start: chunk_start + CHUNK_SIZE]
+        n = len(chunk)
+
+        # Build batch prompt
+        parts = [
+            f"You are scoring {n} candidate answer(s) from a technical interview. "
+            f"Return a JSON array with exactly {n} score objects in the same order as presented.\n"
+        ]
+        for idx, (_, answer_obj, question) in enumerate(chunk, 1):
+            conversation = answer_obj.get("conversation", [])
+            candidate_answer = answer_obj.get("transcript", "")
+            follow_up = answer_obj.get("follow_up_transcript")
+
+            if conversation:
+                convo_lines = []
+                for turn in conversation:
+                    role_label = "Interviewer" if turn.get("role") == "interviewer" else "Candidate"
+                    turn_type = turn.get("type", "")
+                    type_tag = f" ({turn_type})" if turn_type == "follow_up" else ""
+                    convo_lines.append(f"{role_label}{type_tag}: {turn.get('text', '')}")
+                full_answer = "\n".join(convo_lines)
+            else:
+                full_answer = candidate_answer
+                if follow_up:
+                    full_answer = f"{candidate_answer}\n\nFollow-up: {follow_up}"
+
+            parts.append(f"--- ANSWER {idx} ---")
+            parts.append(f"QUESTION:\n{question.get('question', 'N/A')}")
+            parts.append(f"FULL CONVERSATION THREAD:\n{full_answer}")
+            parts.append(
+                "Note: If follow-up questions were asked, consider whether the candidate needed prompting. "
+                "A candidate who gives a comprehensive first answer should score higher on communication."
+            )
+            parts.append(f"EXPECTED COMPETENCIES:\n{', '.join(question.get('expected_competencies', []))}")
+            parts.append(f"SCORING RUBRIC:\n{json.dumps(question.get('scoring_rubric', {}), indent=2)}")
+            parts.append(f"GOOD ANSWER EXAMPLE:\n{question.get('good_answer_example', 'N/A')}")
+            parts.append(f"RED FLAGS TO WATCH FOR:\n{', '.join(question.get('red_flags', []))}")
+            parts.append("")
+
+        parts.append(
+            f"Evaluate all {n} answers. Be thorough and fair for each: consider technical correctness, "
+            "depth of understanding, communication clarity, problem-solving approach, and edge cases."
+        )
+        batch_prompt = "\n".join(parts)
+
+        generation_config = {
+            "temperature": 0.3,
+            "max_output_tokens": min(400 * n, 8192),
+            "response_mime_type": "application/json",
+            "response_schema": response_schema,
+        }
+
+        try:
+            response = model.generate_content(
+                batch_prompt,
+                generation_config=generation_config,
+                safety_settings=safety_settings,
+            )
+
+            if (
+                not response.candidates
+                or not response.candidates[0].content
+                or not response.candidates[0].content.parts
+            ):
+                raise RuntimeError(
+                    f"Batch scoring response blocked (finish_reason: "
+                    f"{getattr(response.candidates[0], 'finish_reason', 'unknown') if response.candidates else 'no candidates'})"
+                )
+
+            batch_scores = json.loads(response.text)
+            if not isinstance(batch_scores, list) or len(batch_scores) != n:
+                raise ValueError(f"Expected {n} scores in batch response, got {len(batch_scores) if isinstance(batch_scores, list) else type(batch_scores)}")
+
+            for (orig_idx, answer_obj, question), score_data in zip(chunk, batch_scores):
+                score_data["score"] = max(0, min(10, int(score_data.get("score", 5))))
+                score_data["question_idx"] = answer_obj.get("question_idx", 0)
+                score_data["question"] = question.get("question", "")
+                results[orig_idx] = score_data
+
+        except Exception as e:
+            logger.warning(f"Batch scoring failed for chunk (answers {chunk_start}–{chunk_start + n - 1}): {e}. Falling back to individual scoring.")
+            for orig_idx, answer_obj, question in chunk:
+                score = score_candidate_answer(
+                    question=question,
+                    candidate_answer=answer_obj.get("transcript", ""),
+                    follow_up_answer=answer_obj.get("follow_up_transcript"),
+                    conversation=answer_obj.get("conversation", []),
+                )
+                score["question_idx"] = answer_obj.get("question_idx", 0)
+                score["question"] = question.get("question", "")
+                results[orig_idx] = score
+
+    return [r for r in results if r is not None]
+
+
 def calculate_overall_metrics(scores: List[Dict]) -> Dict:
     """
     Calculate overall interview metrics from individual scores

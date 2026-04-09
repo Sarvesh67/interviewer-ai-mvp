@@ -1,12 +1,32 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: interviewer
+      POSTGRES_PASSWORD: interviewer
+      POSTGRES_DB: interviewer
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U interviewer"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
   api:
     build:
       context: .
       target: api
     env_file: .env
+    environment:
+      DATABASE_URL: "postgresql+asyncpg://interviewer:interviewer@postgres:5432/interviewer"
     volumes:
       - interview_data:/app/interview_store
       - upload_data:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
     # No ports exposed — Caddy handles external traffic
 
@@ -36,6 +56,7 @@ services:
     restart: unless-stopped
 
 volumes:
+  pgdata:
   interview_data:
   upload_data:
   caddy_data:
