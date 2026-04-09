@@ -332,7 +332,7 @@ async def create_interview(
 
         candidate_info = {
             "name": interview_request.candidate_name,
-            "email": interview_request.candidate_email,
+            "email": interview_request.candidate_email.lower(),
             "position": interview_request.job_title
         }
 
@@ -345,7 +345,7 @@ async def create_interview(
             user_id=user_obj.id,
             job_title=interview_request.job_title,
             candidate_name=interview_request.candidate_name,
-            candidate_email=interview_request.candidate_email,
+            candidate_email=interview_request.candidate_email.lower(),
             domain_knowledge=domain_knowledge,
             questions=questions,
             candidate_info=candidate_info,
