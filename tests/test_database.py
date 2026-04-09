@@ -105,6 +105,28 @@ class TestUserModel:
         await db.rollback()
 
     @pytest.mark.asyncio
+    async def test_get_or_create_user_lowercases_email(self, db: AsyncSession):
+        """Emails stored via get_or_create_user are always lowercased."""
+        from app.server import get_or_create_user
+
+        user = await get_or_create_user(db, "Alice@Example.COM", "Alice")
+        await db.commit()
+        assert user.email == "alice@example.com"
+
+    @pytest.mark.asyncio
+    async def test_get_or_create_user_case_insensitive_lookup(self, db: AsyncSession):
+        """get_or_create_user treats mixed-case email as the same user."""
+        from app.server import get_or_create_user
+
+        u1 = await get_or_create_user(db, "bob@example.com", "Bob")
+        await db.commit()
+
+        # Login again with different casing — must return same user, not a new one
+        u2 = await get_or_create_user(db, "BOB@EXAMPLE.COM", "Bob")
+        await db.commit()
+        assert u1.id == u2.id
+
+    @pytest.mark.asyncio
     async def test_user_defaults(self, db: AsyncSession):
         user = User(id=uuid.uuid4(), email="defaults@example.com")
         db.add(user)

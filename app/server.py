@@ -161,6 +161,7 @@ class InterviewStateResponse(BaseModel):
 
 async def get_or_create_user(db: AsyncSession, email: str, name: str) -> User:
     """Get existing user by email or create a new one. Updates name on each login."""
+    email = email.lower()
     result = await db.execute(select(User).where(User.email == email))
     user = result.scalar_one_or_none()
     if user is None:
