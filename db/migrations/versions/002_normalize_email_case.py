@@ -52,8 +52,9 @@ def upgrade() -> None:
                 {"dup": dup_id},
             )
 
-    # 2. Lowercase all remaining email values
+    # 2. Lowercase all remaining email values (users and interview candidate_email)
     conn.execute(sa.text("UPDATE users SET email = lower(email)"))
+    conn.execute(sa.text("UPDATE interviews SET candidate_email = lower(candidate_email)"))
 
     # 3. Drop the old case-sensitive unique index and create a new functional
     #    unique index on lower(email) so future inserts are also protected.

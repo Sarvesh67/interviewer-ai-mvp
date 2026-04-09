@@ -108,7 +108,7 @@ def _parse_interview_file(path: Path) -> dict:
         "avatar_id": raw.get("avatar_id"),
         "job_title": job_title or candidate_info.get("position", "Unknown"),
         "candidate_name": candidate_info.get("name", "Unknown"),
-        "candidate_email": candidate_info.get("email", ""),
+        "candidate_email": candidate_info.get("email", "").lower(),
         "user_email": raw.get("user_email"),  # only present in _api.json
         "status": raw.get("status", "completed"),
         "created_at": raw.get("created_at"),
@@ -166,8 +166,8 @@ async def migrate(*, apply: bool, user_email: str | None):
 
             data = _parse_interview_file(interview_path)
 
-            # Determine the owner email
-            email = data["user_email"] or user_email or data["candidate_email"] or "migrated@localhost"
+            # Determine the owner email — always lowercase to match the DB index
+            email = (data["user_email"] or user_email or data["candidate_email"] or "migrated@localhost").lower()
 
             # Get or create user
             if email not in user_cache:
