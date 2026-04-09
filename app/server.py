@@ -1,6 +1,6 @@
 """
 Main FastAPI Application for Technical Interviewer
-Integrates all components: domain extraction, question generation, 
+Integrates all components: domain extraction, question generation,
 Hedra avatar, interview session, scoring, and reporting
 """
 import asyncio
@@ -10,14 +10,16 @@ import uuid
 import json
 import logging
 from pathlib import Path
-from datetime import datetime
-from typing import Optional, Dict, List
+from datetime import datetime, timezone
+from typing import Optional, Dict
 
-from fastapi import FastAPI, HTTPException, UploadFile, File, BackgroundTasks, Depends, Header, Request
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from starlette.middleware.base import BaseHTTPMiddleware
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import settings, validate_api_keys, get_missing_required_keys, get_missing_realtime_keys
 from core.domain_extraction import extract_domain_knowledge
@@ -27,6 +29,8 @@ from core.session import TechnicalInterviewSession
 from core.answer_scoring import score_all_answers, score_all_answers_batch, calculate_overall_metrics
 from core.report_generator import generate_interview_report, format_report_for_display
 from agent.manager import RealtimeInterviewManager, register_interview_session
+from db.session import get_db, AsyncSessionLocal
+from db.models import User, Interview, Report
 
 logger = logging.getLogger("main")
 
@@ -116,6 +120,10 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 UPLOAD_DIR = settings.UPLOAD_DIR
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
+# Interview store dir is still needed for agent-to-API file communication
+INTERVIEW_STORE_DIR = os.path.join(settings.UPLOAD_DIR, "..", "interview_store")
+os.makedirs(INTERVIEW_STORE_DIR, exist_ok=True)
+
 # ==================================================
 # Data Models
 # ==================================================
@@ -147,88 +155,50 @@ class InterviewStateResponse(BaseModel):
 
 
 # ==================================================
-# In-Memory Cache + File Persistence
-# WARNING: Single-worker only. Deploy with --workers 1 or replace with database.
+# Database Helpers
 # ==================================================
 
-INTERVIEW_STORE_DIR = os.path.join(settings.UPLOAD_DIR, "..", "interview_store")
-os.makedirs(INTERVIEW_STORE_DIR, exist_ok=True)
 
-interviews: Dict[str, Dict] = {}
-
-
-def _persist_interview(interview_id: str, data: Dict):
-    """Save interview API state to disk so it survives container restarts."""
-    payload = {
-        "domain_knowledge": data["domain_knowledge"],
-        "questions": data["questions"],
-        "candidate_info": data["candidate_info"],
-        "avatar_id": data.get("avatar_id"),
-        "user_email": data.get("user_email"),
-        "created_at": data.get("created_at"),
-        "status": data.get("status", "created"),
-        "job_title": data.get("candidate_info", {}).get("position", ""),
-    }
-    path = os.path.join(INTERVIEW_STORE_DIR, f"{interview_id}_api.json")
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(payload, f, ensure_ascii=False)
+async def get_or_create_user(db: AsyncSession, email: str, name: str) -> User:
+    """Get existing user by email or create a new one. Updates name on each login."""
+    result = await db.execute(select(User).where(User.email == email))
+    user = result.scalar_one_or_none()
+    if user is None:
+        user = User(email=email, name=name)
+        db.add(user)
+        await db.flush()
+    else:
+        user.name = name
+        user.updated_at = datetime.now(timezone.utc)
+    return user
 
 
-def _update_interview_status(interview_id: str, status: str):
-    """Update the status field in the persisted interview file."""
-    path = os.path.join(INTERVIEW_STORE_DIR, f"{interview_id}_api.json")
-    if not os.path.exists(path):
-        return
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            payload = json.load(f)
-        payload["status"] = status
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(payload, f, ensure_ascii=False)
-    except (json.JSONDecodeError, OSError) as e:
-        logger.error(f"Failed to update status for {interview_id}: {e}")
-
-
-def _load_interview(interview_id: str) -> Optional[Dict]:
-    """Load interview from disk into the in-memory cache."""
-    path = os.path.join(INTERVIEW_STORE_DIR, f"{interview_id}_api.json")
-    if not os.path.exists(path):
-        return None
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            payload = json.load(f)
-    except (json.JSONDecodeError, OSError) as e:
-        logger.error(f"Failed to load interview {interview_id}: {e}")
-        return None
-
+def _session_from_interview(row: Interview) -> TechnicalInterviewSession:
+    """Reconstruct a runtime TechnicalInterviewSession from a DB row."""
     session = TechnicalInterviewSession(
-        avatar_id=payload.get("avatar_id"),
+        avatar_id=row.avatar_id,
         avatar_image_path=None,
         job_description={
-            "title": payload["candidate_info"].get("position", ""),
+            "title": row.job_title,
             "description": "",
-            "domain_knowledge": payload["domain_knowledge"],
+            "domain_knowledge": row.domain_knowledge,
         },
-        questions=payload["questions"],
-        candidate_info=payload["candidate_info"],
+        questions=row.questions,
+        candidate_info=row.candidate_info,
     )
-    interviews[interview_id] = {
-        "session": session,
-        "domain_knowledge": payload["domain_knowledge"],
-        "questions": payload["questions"],
-        "candidate_info": payload["candidate_info"],
-        "avatar_id": payload.get("avatar_id"),
-        "user_email": payload.get("user_email"),
-        "created_at": payload.get("created_at"),
-    }
-    return interviews[interview_id]
+    if row.answers:
+        session.answers = row.answers
+        session.current_question_idx = len(row.answers)
+    return session
 
 
-def get_interview(interview_id: str) -> Optional[Dict]:
-    """Get interview from cache, falling back to disk."""
-    if interview_id in interviews:
-        return interviews[interview_id]
-    return _load_interview(interview_id)
+async def _get_interview_or_404(db: AsyncSession, interview_id: str) -> Interview:
+    """Load an interview from the database or raise 404."""
+    result = await db.execute(select(Interview).where(Interview.id == interview_id))
+    row = result.scalar_one_or_none()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Interview not found")
+    return row
 
 
 # ==================================================
@@ -259,7 +229,7 @@ def config_status():
     status = validate_api_keys()
     missing = get_missing_required_keys()
     missing_realtime = get_missing_realtime_keys()
-    
+
     return {
         "api_keys_status": status,
         "missing_required_keys": missing,
@@ -277,46 +247,43 @@ def config_status():
 # ==================================================
 
 @app.get("/api/v1/interviews")
-async def list_interviews(user: dict = Depends(get_current_user)):
+async def list_interviews(user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     """List all interviews for the authenticated user, newest first."""
-    user_email = user["email"]
-    result = []
+    user_obj = await get_or_create_user(db, user["email"], user["name"])
 
-    for filename in os.listdir(INTERVIEW_STORE_DIR):
-        if not filename.endswith("_api.json"):
-            continue
-        filepath = os.path.join(INTERVIEW_STORE_DIR, filename)
-        try:
-            with open(filepath, "r", encoding="utf-8") as f:
-                data = json.load(f)
-        except (json.JSONDecodeError, OSError):
-            continue
+    result = await db.execute(
+        select(Interview)
+        .where(Interview.user_id == user_obj.id)
+        .order_by(Interview.created_at.desc())
+    )
+    rows = result.scalars().all()
 
-        if data.get("user_email") != user_email:
-            continue
-
-        interview_id = filename.replace("_api.json", "")
-        report_path = os.path.join(UPLOAD_DIR, f"{interview_id}_report.json")
-
-        result.append({
-            "interview_id": interview_id,
-            "job_title": data.get("job_title", data.get("candidate_info", {}).get("position", "")),
-            "candidate_name": data.get("candidate_info", {}).get("name", ""),
-            "created_at": data.get("created_at", ""),
-            "status": data.get("status", "created"),
-            "has_report": os.path.exists(report_path),
+    interviews_list = []
+    for row in rows:
+        interviews_list.append({
+            "interview_id": row.id,
+            "job_title": row.job_title,
+            "candidate_name": row.candidate_name,
+            "created_at": row.created_at.isoformat() if row.created_at else "",
+            "status": row.status,
+            "has_report": row.report is not None,
         })
 
-    result.sort(key=lambda x: x.get("created_at", ""), reverse=True)
-    return {"interviews": result}
+    await db.commit()
+    return {"interviews": interviews_list}
 
 
 @app.post("/api/v1/interviews/create")
 @limiter.limit("10/minute")
-async def create_interview(request: Request, interview_request: InterviewRequest, user: dict = Depends(get_current_user)):
+async def create_interview(
+    request: Request,
+    interview_request: InterviewRequest,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     """
     Create a new technical interview session
-    
+
     Steps:
     1. Extract domain knowledge from job description
     2. Generate technical questions
@@ -330,12 +297,11 @@ async def create_interview(request: Request, interview_request: InterviewRequest
             status_code=400,
             detail=f"Missing required API keys: {', '.join(missing_keys)}"
         )
-    
+
     try:
         interview_id = f"interview_{uuid.uuid4().hex[:12]}"
 
         # Run avatar creation concurrently with domain extraction + question generation.
-        # Avatar is independent — no need to wait for it sequentially.
         async def create_avatar():
             try:
                 return await asyncio.to_thread(
@@ -362,46 +328,49 @@ async def create_interview(request: Request, interview_request: InterviewRequest
             extract_and_generate(),
             create_avatar()
         )
-        
-        # Step 4: Create interview session
-        job_desc_dict = {
-            "title": interview_request.job_title,
-            "description": interview_request.job_description,
-            "domain_knowledge": domain_knowledge
-        }
-        
+
         candidate_info = {
             "name": interview_request.candidate_name,
             "email": interview_request.candidate_email,
             "position": interview_request.job_title
         }
-        
+
+        # Upsert user
+        user_obj = await get_or_create_user(db, user["email"], user["name"])
+
+        # Create interview row
+        interview_row = Interview(
+            id=interview_id,
+            user_id=user_obj.id,
+            job_title=interview_request.job_title,
+            candidate_name=interview_request.candidate_name,
+            candidate_email=interview_request.candidate_email,
+            domain_knowledge=domain_knowledge,
+            questions=questions,
+            candidate_info=candidate_info,
+            avatar_id=avatar_id,
+            status="created",
+        )
+        db.add(interview_row)
+        await db.commit()
+
+        # Build a runtime session for the agent and register it
         session = TechnicalInterviewSession(
             avatar_id=avatar_id,
             avatar_image_path=interview_request.avatar_image_path,
-            job_description=job_desc_dict,
+            job_description={
+                "title": interview_request.job_title,
+                "description": interview_request.job_description,
+                "domain_knowledge": domain_knowledge,
+            },
             questions=questions,
-            candidate_info=candidate_info
+            candidate_info=candidate_info,
         )
-        
-        # Store interview data
-        interviews[interview_id] = {
-            "session": session,
-            "domain_knowledge": domain_knowledge,
-            "questions": questions,
-            "candidate_info": candidate_info,
-            "avatar_id": avatar_id,
-            "user_email": user["email"],
-            "created_at": datetime.now().isoformat(),
-            "status": "created"
-        }
-        
-        # Persist to disk (survives container restarts)
-        _persist_interview(interview_id, interviews[interview_id])
-
-        # Register session for real-time agent access
         register_interview_session(interview_id, session)
-        
+
+        # Persist interview metadata to disk for agent cross-container access
+        _persist_interview_for_agent(interview_id, interview_row)
+
         return {
             "interview_id": interview_id,
             "avatar_id": avatar_id,
@@ -411,43 +380,57 @@ async def create_interview(request: Request, interview_request: InterviewRequest
             "opening_message": session.get_opening_message(),
             "first_question": questions[0] if questions else None
         }
-        
+
     except Exception as e:
         logger.error(f"Interview creation failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Interview creation failed. Check server logs.")
 
 
+def _persist_interview_for_agent(interview_id: str, row: Interview):
+    """Write interview metadata to disk so the agent container can read it."""
+    payload = {
+        "domain_knowledge": row.domain_knowledge,
+        "questions": row.questions,
+        "candidate_info": row.candidate_info,
+        "avatar_id": row.avatar_id,
+        "status": row.status,
+        "job_title": row.job_title,
+    }
+    path = os.path.join(INTERVIEW_STORE_DIR, f"{interview_id}_api.json")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False)
+
+
 @app.post("/api/v1/interviews/{interview_id}/start")
-async def start_interview(interview_id: str, user: dict = Depends(get_current_user)):
+async def start_interview(interview_id: str, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     validate_interview_id(interview_id)
     """Start an interview session"""
-    interview = get_interview(interview_id)
-    if not interview:
-        raise HTTPException(status_code=404, detail="Interview not found")
-    session = interview["session"]
-    
+    row = await _get_interview_or_404(db, interview_id)
+
+    row.status = "in_progress"
+    await db.commit()
+
+    session = _session_from_interview(row)
     session.start_interview()
-    
+
     return {
         "interview_id": interview_id,
         "status": "started",
         "opening_message": session.get_opening_message(),
-        "first_question": interview["questions"][0] if interview["questions"] else None
+        "first_question": row.questions[0] if row.questions else None
     }
 
 
 @app.get("/api/v1/interviews/{interview_id}/state")
-async def get_interview_state(interview_id: str, user: dict = Depends(get_current_user)):
+async def get_interview_state(interview_id: str, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     validate_interview_id(interview_id)
     """Get current interview state"""
-    interview = get_interview(interview_id)
-    if not interview:
-        raise HTTPException(status_code=404, detail="Interview not found")
-    session = interview["session"]
-    
+    row = await _get_interview_or_404(db, interview_id)
+    session = _session_from_interview(row)
+
     state = session.get_interview_state()
     current_question = session.get_current_question()
-    
+
     return InterviewStateResponse(
         interview_id=interview_id,
         active=state["active"],
@@ -460,32 +443,37 @@ async def get_interview_state(interview_id: str, user: dict = Depends(get_curren
 
 
 @app.post("/api/v1/interviews/{interview_id}/answer")
-async def submit_answer(interview_id: str, answer: AnswerSubmission, user: dict = Depends(get_current_user)):
+async def submit_answer(interview_id: str, answer: AnswerSubmission, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     validate_interview_id(interview_id)
     """Submit candidate answer for current question"""
-    interview = get_interview(interview_id)
-    if not interview:
-        raise HTTPException(status_code=404, detail="Interview not found")
-    session = interview["session"]
-    
-    if not session.interview_active:
+    row = await _get_interview_or_404(db, interview_id)
+    session = _session_from_interview(row)
+
+    if not session.interview_active and row.status != "in_progress":
         raise HTTPException(status_code=400, detail="Interview is not active")
-    
+
+    # Force the session active for non-realtime mode
+    session.interview_active = True
+
     if session.is_complete():
         raise HTTPException(status_code=400, detail="Interview is already complete")
-    
+
     # Submit answer
     session.submit_answer(
         transcript=answer.transcript,
         follow_up_transcript=answer.follow_up_transcript
     )
-    
+
+    # Persist answers back to DB
+    row.answers = session.answers
+    await db.commit()
+
     # Check if follow-up is needed
     needs_followup = session.needs_follow_up(answer.transcript)
     follow_up_question = None
     if needs_followup and not session.is_complete():
         follow_up_question = session.get_follow_up_question(answer.transcript)
-    
+
     # Get next question or closing
     if session.is_complete():
         next_message = session.get_closing_message()
@@ -493,7 +481,7 @@ async def submit_answer(interview_id: str, answer: AnswerSubmission, user: dict 
     else:
         next_question = session.get_current_question()
         next_message = None
-    
+
     return {
         "interview_id": interview_id,
         "question_answered": answer.question_idx,
@@ -505,85 +493,82 @@ async def submit_answer(interview_id: str, answer: AnswerSubmission, user: dict 
     }
 
 
-def _generate_report_background(interview_id: str):
-    """Background task: score answers and generate report, then update status."""
+async def _generate_report_background(interview_id: str):
+    """Background task: score answers and generate report, then save to DB."""
     try:
-        interview = get_interview(interview_id)
-        if not interview:
-            logger.error(f"Background report: interview {interview_id} not found")
-            return
-        session = interview["session"]
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(select(Interview).where(Interview.id == interview_id))
+            row = result.scalar_one_or_none()
+            if row is None:
+                logger.error(f"Background report: interview {interview_id} not found")
+                return
 
-        # Score all answers
-        scores = score_all_answers_batch(
-            answers=session.answers,
-            questions=interview["questions"]
-        )
-        interview["scores"] = scores
+            session = _session_from_interview(row)
 
-        # Generate report
-        report = generate_interview_report(
-            candidate_info=interview["candidate_info"],
-            answers=session.answers,
-            scores=scores,
-            questions=interview["questions"],
-            domain_knowledge=interview["domain_knowledge"],
-            interview_duration_minutes=session.get_duration_minutes()
-        )
-        interview["report"] = report
+            # Score all answers (blocking Gemini calls — run in thread)
+            scores = await asyncio.to_thread(
+                score_all_answers_batch,
+                answers=session.answers,
+                questions=row.questions,
+            )
 
-        # Save report to file
-        report_path = os.path.join(UPLOAD_DIR, f"{interview_id}_report.json")
-        with open(report_path, "w", encoding="utf-8") as f:
-            json.dump(report, f, indent=2, ensure_ascii=False)
+            # Generate report (CPU-bound, fast)
+            report = generate_interview_report(
+                candidate_info=row.candidate_info,
+                answers=session.answers,
+                scores=scores,
+                questions=row.questions,
+                domain_knowledge=row.domain_knowledge,
+                interview_duration_minutes=None,
+            )
 
-        # Also save formatted text version
-        text_report = format_report_for_display(report)
-        text_report_path = os.path.join(UPLOAD_DIR, f"{interview_id}_report.txt")
-        with open(text_report_path, "w", encoding="utf-8") as f:
-            f.write(text_report)
+            text_report = format_report_for_display(report)
 
-        _update_interview_status(interview_id, "completed")
-        logger.info(f"Report generated for {interview_id}")
+            # Save report to DB
+            report_row = Report(
+                interview_id=interview_id,
+                report_data=report,
+                report_text=text_report,
+                overall_score=report.get("overall_score"),
+                recommendation=report.get("recommendation"),
+            )
+            db.add(report_row)
+            row.status = "completed"
+            await db.commit()
+            logger.info(f"Report generated for {interview_id}")
 
     except Exception as e:
         logger.error(f"Background report generation failed for {interview_id}: {e}", exc_info=True)
-        _update_interview_status(interview_id, "completed")
+        # Still mark as completed so the UI doesn't hang
+        try:
+            async with AsyncSessionLocal() as db:
+                result = await db.execute(select(Interview).where(Interview.id == interview_id))
+                row = result.scalar_one_or_none()
+                if row:
+                    row.status = "completed"
+                    await db.commit()
+        except Exception:
+            pass
 
 
 @app.post("/api/v1/interviews/{interview_id}/complete")
-async def complete_interview(interview_id: str, background_tasks: BackgroundTasks, user: dict = Depends(get_current_user)):
+async def complete_interview(interview_id: str, background_tasks: BackgroundTasks, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     validate_interview_id(interview_id)
     """Complete interview and kick off report generation in background"""
-    interview = get_interview(interview_id)
-    if not interview:
-        raise HTTPException(status_code=404, detail="Interview not found")
-    session = interview["session"]
+    row = await _get_interview_or_404(db, interview_id)
 
     # Load agent-persisted answers (agent runs in separate container — answers are on disk)
     answers_file = Path(INTERVIEW_STORE_DIR) / f"{interview_id}_answers.json"
     if answers_file.exists():
         try:
             agent_data = json.loads(answers_file.read_text())
-            session.answers = agent_data.get("answers", [])
-            session.current_question_idx = agent_data.get("current_question_idx", 0)
-            if agent_data.get("start_time"):
-                session.start_time = datetime.fromisoformat(agent_data["start_time"])
-            if agent_data.get("end_time"):
-                session.end_time = datetime.fromisoformat(agent_data["end_time"])
-            session.interview_active = agent_data.get("interview_active", False)
-            logger.info(f"Loaded {len(session.answers)} answers from agent for {interview_id}")
+            row.answers = agent_data.get("answers", [])
+            logger.info(f"Loaded {len(row.answers)} answers from agent for {interview_id}")
         except Exception as e:
             logger.warning(f"Failed to load agent answers for {interview_id}: {e}")
 
-    # End interview (if agent hasn't already)
-    if session.interview_active:
-        session.end_interview()
-    elif not session.end_time:
-        session.end_time = datetime.now()
-
-    # Mark as generating — dashboard will show loading state
-    _update_interview_status(interview_id, "generating_report")
+    row.status = "generating_report"
+    await db.commit()
 
     # Kick off scoring + report generation in background
     background_tasks.add_task(_generate_report_background, interview_id)
@@ -595,58 +580,51 @@ async def complete_interview(interview_id: str, background_tasks: BackgroundTask
 
 
 @app.get("/api/v1/interviews/{interview_id}/report")
-async def get_interview_report(interview_id: str, user: dict = Depends(get_current_user)):
+async def get_interview_report(interview_id: str, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     validate_interview_id(interview_id)
     """Get interview report"""
-    interview = get_interview(interview_id)
-    if not interview:
-        raise HTTPException(status_code=404, detail="Interview not found")
-    
-    if "report" not in interview:
+    result = await db.execute(select(Report).where(Report.interview_id == interview_id))
+    report_row = result.scalar_one_or_none()
+    if report_row is None:
         raise HTTPException(status_code=404, detail="Report not yet generated")
-    
-    return interview["report"]
+
+    return report_row.report_data
 
 
 @app.get("/api/v1/interviews/{interview_id}")
-async def get_interview_details(interview_id: str, user: dict = Depends(get_current_user)):
+async def get_interview_details(interview_id: str, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     validate_interview_id(interview_id)
     """Get full interview details"""
-    interview = get_interview(interview_id)
-    if not interview:
-        raise HTTPException(status_code=404, detail="Interview not found")
-    session = interview["session"]
-    
+    row = await _get_interview_or_404(db, interview_id)
+    session = _session_from_interview(row)
+
     return {
         "interview_id": interview_id,
-        "candidate_info": interview["candidate_info"],
-        "job_title": interview["candidate_info"]["position"],
-        "domain_knowledge": interview["domain_knowledge"],
-        "total_questions": len(interview["questions"]),
+        "candidate_info": row.candidate_info,
+        "job_title": row.job_title,
+        "domain_knowledge": row.domain_knowledge,
+        "total_questions": len(row.questions),
         "state": session.get_interview_state(),
-        "has_report": "report" in interview,
-        "created_at": interview["created_at"]
+        "has_report": row.report is not None,
+        "created_at": row.created_at.isoformat() if row.created_at else "",
     }
 
 
 @app.post("/api/v1/interviews/{interview_id}/start-realtime")
 @limiter.limit("10/minute")
-async def start_realtime_interview(request: Request, interview_id: str, user: dict = Depends(get_current_user)):
+async def start_realtime_interview(request: Request, interview_id: str, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     validate_interview_id(interview_id)
     """
     Start a real-time interview session with LiveKit + Hedra
-    
+
     Creates a LiveKit room and returns connection details for the candidate
     The interview agent will automatically join and conduct the interview
     """
-    interview = get_interview(interview_id)
-    if not interview:
-        raise HTTPException(status_code=404, detail="Interview not found")
-    session = interview["session"]
-    candidate_info = interview["candidate_info"]
-    
+    row = await _get_interview_or_404(db, interview_id)
+    session = _session_from_interview(row)
+
     try:
-        # Fail fast if real-time prerequisites are missing, otherwise the worker can join but never speak
+        # Fail fast if real-time prerequisites are missing
         missing_realtime = get_missing_realtime_keys()
         if missing_realtime:
             raise HTTPException(
@@ -654,19 +632,17 @@ async def start_realtime_interview(request: Request, interview_id: str, user: di
                 detail=f"Real-time interview is not configured. Missing: {', '.join(missing_realtime)}. See /api/config/status for details."
             )
 
-        # Create LiveKit room manager
         manager = RealtimeInterviewManager()
-        
-        # Create interview room
+
         room_info = await manager.create_interview_room(
             interview_id=interview_id,
             interview_session=session,
-            candidate_name=candidate_info.get("name", "Candidate")
+            candidate_name=row.candidate_info.get("name", "Candidate")
         )
-        
-        # Start interview session
+
         session.start_interview()
-        _update_interview_status(interview_id, "in_progress")
+        row.status = "in_progress"
+        await db.commit()
 
         return {
             "interview_id": interview_id,
@@ -677,21 +653,22 @@ async def start_realtime_interview(request: Request, interview_id: str, user: di
             "livekit_url": room_info["room_url"],
             "instructions": "Use the candidate_join_url to connect to the interview. The interviewer agent will join automatically."
         }
-        
+
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Real-time interview start failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to start real-time interview. Check server logs.")
 
 
 @app.get("/api/v1/interviews/{interview_id}/realtime/participants")
-async def realtime_participants(interview_id: str, user: dict = Depends(get_current_user)):
+async def realtime_participants(interview_id: str, user: dict = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     validate_interview_id(interview_id)
     """
     Debug endpoint: list current LiveKit participants for the interview room.
     Useful to confirm whether the agent/hedra participant actually joined.
     """
-    if interview_id not in interviews:
-        raise HTTPException(status_code=404, detail="Interview not found")
+    await _get_interview_or_404(db, interview_id)
 
     missing_realtime = get_missing_realtime_keys()
     if missing_realtime:
@@ -703,7 +680,6 @@ async def realtime_participants(interview_id: str, user: dict = Depends(get_curr
     manager = RealtimeInterviewManager()
     try:
         participants = await manager.livekit_api.room.list_participants(room=interview_id)
-        # livekit api returns protobuf-ish objects; normalize into JSON-friendly dicts
         normalized = []
         for p in participants.participants:
             normalized.append(
@@ -733,4 +709,3 @@ if os.path.isdir("frontend"):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
-
