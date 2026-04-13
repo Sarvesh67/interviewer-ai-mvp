@@ -440,16 +440,22 @@
 
         async function viewReport(interviewId) {
             try {
-                var resp = await fetch(API_BASE + '/api/v1/interviews/' + interviewId + '/report', {
+                var resp = await fetch(API_BASE + '/api/v1/interviews/' + interviewId + '/report/pdf', {
                     headers: { 'Authorization': 'Bearer ' + idToken }
                 });
-                if (!resp.ok) throw new Error('Failed to load report');
-                var report = await resp.json();
-                var w = window.open('', '_blank');
-                w.document.write('<pre style="font-family:monospace;padding:20px;">' +
-                    escapeHtml(JSON.stringify(report, null, 2)) + '</pre>');
+                if (!resp.ok) throw new Error('Failed to download report');
+                var blob = await resp.blob();
+                var url = URL.createObjectURL(blob);
+                var a = document.createElement('a');
+                a.href = url;
+                a.download = 'interview_report.pdf';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
             } catch (err) {
-                console.error('Report failed:', err);
+                console.error('Report download failed:', err);
+                alert('Failed to download report. Please try again.');
             }
         }
 
