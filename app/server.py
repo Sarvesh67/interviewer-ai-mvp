@@ -15,7 +15,7 @@ from typing import Optional, Dict
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
 from starlette.middleware.base import BaseHTTPMiddleware
 from sqlalchemy import select
@@ -28,6 +28,7 @@ from integrations.hedra import create_hedra_image_avatar, create_interviewer_per
 from core.session import TechnicalInterviewSession
 from core.answer_scoring import score_all_answers, score_all_answers_batch, calculate_overall_metrics
 from core.report_generator import generate_interview_report, format_report_for_display
+from core.pdf_report import generate_pdf_report
 from agent.manager import RealtimeInterviewManager, register_interview_session
 from db.session import get_db, AsyncSessionLocal
 from db.models import User, Interview, Report
@@ -590,6 +591,33 @@ async def get_interview_report(interview_id: str, user: dict = Depends(get_curre
         raise HTTPException(status_code=404, detail="Report not yet generated")
 
     return report_row.report_data
+
+
+@app.get("/api/v1/interviews/{interview_id}/report/pdf")
+async def get_interview_report_pdf(
+    interview_id: str,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Download interview report as a professionally formatted PDF."""
+    validate_interview_id(interview_id)
+    result = await db.execute(select(Report).where(Report.interview_id == interview_id))
+    report_row = result.scalar_one_or_none()
+    if report_row is None:
+        raise HTTPException(status_code=404, detail="Report not yet generated")
+
+    pdf_bytes = generate_pdf_report(report_row.report_data)
+
+    # Build a safe filename from the candidate name
+    candidate = report_row.report_data.get("candidate_name", "candidate")
+    safe_name = "".join(c if c.isalnum() or c in ("-", "_") else "_" for c in candidate)
+    filename = f"interview_report_{safe_name}.pdf"
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @app.get("/api/v1/interviews/{interview_id}")

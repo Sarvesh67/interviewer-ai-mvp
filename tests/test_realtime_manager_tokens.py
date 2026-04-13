@@ -1,7 +1,20 @@
 import importlib
+import sys
 import types
 
 import pytest
+
+# Stub out heavy livekit plugin imports not available outside Docker
+_STUBS = [
+    "livekit.plugins",
+    "livekit.plugins.google",
+    "livekit.plugins.deepgram",
+    "livekit.plugins.hedra",
+    "livekit.plugins.turn_detector",
+]
+for _mod_name in _STUBS:
+    if _mod_name not in sys.modules:
+        sys.modules[_mod_name] = types.ModuleType(_mod_name)
 
 
 class _DummyRoomService:
@@ -9,9 +22,18 @@ class _DummyRoomService:
         return types.SimpleNamespace(name="dummy-room")
 
 
+class _DummyAgentDispatch:
+    async def create_dispatch(self, *_args, **_kwargs):
+        return None
+
+
 class _DummyLiveKitAPI:
     def __init__(self, *args, **kwargs):
         self.room = _DummyRoomService()
+        self.agent_dispatch = _DummyAgentDispatch()
+
+    async def aclose(self):
+        pass
 
 
 class _DummyAccessToken:
@@ -28,6 +50,10 @@ class _DummyAccessToken:
 
     def with_name(self, name):
         self.name = name
+        return self
+
+    def with_ttl(self, ttl):
+        self.ttl = ttl
         return self
 
     def with_grants(self, grants):
@@ -57,7 +83,13 @@ async def test_create_interview_room_builds_candidate_join_url(monkeypatch):
 
     importlib.reload(config)
 
-    import realtime_interview_manager as rim  # noqa: WPS433
+    import agent.manager as rim  # noqa: WPS433
+
+    # Patch settings in both config and agent.manager (which does `from config import settings`)
+    monkeypatch.setattr(config.settings, "LIVEKIT_URL", "wss://example.livekit.cloud")
+    monkeypatch.setattr(config.settings, "LIVEKIT_API_KEY", "key")
+    monkeypatch.setattr(config.settings, "LIVEKIT_API_SECRET", "secret")
+    monkeypatch.setattr(rim, "settings", config.settings)
 
     # Patch livekit api classes used inside manager
     monkeypatch.setattr(rim.api, "LiveKitAPI", _DummyLiveKitAPI)
