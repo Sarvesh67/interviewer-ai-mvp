@@ -220,6 +220,94 @@
         .loading-message.fade-out { opacity: 0; }
 
         .loading-footer { font-size: 12px; color: #bbb; }
+
+        /* Mode banner (fresher nudge) */
+        .mode-banner {
+            display: flex; align-items: center; gap: 12px;
+            padding: 12px 14px; background: #f4f6ff;
+            border: 1px solid #d6dbff; border-radius: 10px;
+            margin-bottom: 18px; font-size: 13px; color: #3a3f66;
+        }
+        .mode-banner .icon {
+            flex-shrink: 0; width: 28px; height: 28px; border-radius: 8px;
+            background: #667eea; color: white;
+            display: flex; align-items: center; justify-content: center;
+            font-weight: 700; font-size: 14px;
+        }
+        .mode-banner .copy { flex: 1; line-height: 1.4; }
+        .mode-banner .copy strong { color: #333; }
+        .mode-banner .switch-link {
+            color: #667eea; font-weight: 600; cursor: pointer;
+            text-decoration: none; white-space: nowrap;
+        }
+        .mode-banner .switch-link:hover { text-decoration: underline; }
+
+        /* Segmented mode toggle */
+        .mode-toggle {
+            display: grid; grid-template-columns: 1fr 1fr; gap: 4px;
+            padding: 4px; background: #f1f3f9; border-radius: 10px;
+            margin-bottom: 20px;
+        }
+        .mode-toggle button {
+            padding: 10px 12px; border: none; background: transparent;
+            color: #667; font-size: 13px; font-weight: 600; cursor: pointer;
+            border-radius: 8px; transition: all 0.2s;
+        }
+        .mode-toggle button.active {
+            background: white; color: #333;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .mode-toggle button:not(.active):hover { color: #333; }
+
+        /* Resume mode info box */
+        .info-box {
+            padding: 12px 14px; background: #fff8e6;
+            border: 1px solid #f5e0a8; border-radius: 10px;
+            margin-bottom: 18px; font-size: 12px; color: #6b5b1e;
+            line-height: 1.5;
+        }
+        .info-box strong { color: #4a3f10; }
+
+        /* File input */
+        .file-input-wrapper {
+            position: relative; display: flex; align-items: center; gap: 12px;
+            padding: 14px; border: 2px dashed #c8cee8; border-radius: 10px;
+            background: #fafbff; cursor: pointer; transition: border-color 0.2s;
+        }
+        .file-input-wrapper:hover { border-color: #667eea; }
+        .file-input-wrapper input[type=file] {
+            position: absolute; inset: 0; opacity: 0; cursor: pointer;
+        }
+        .file-input-wrapper .file-icon {
+            width: 36px; height: 36px; border-radius: 8px;
+            background: #667eea; color: white;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 16px; font-weight: 700; flex-shrink: 0;
+        }
+        .file-input-wrapper .file-text {
+            flex: 1; font-size: 13px; color: #555; min-width: 0;
+        }
+        .file-input-wrapper .file-text .primary { font-weight: 600; color: #333; }
+        .file-input-wrapper .file-text .secondary { color: #999; font-size: 12px; margin-top: 2px; }
+        .file-input-wrapper.has-file .file-text .primary {
+            color: #155724; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+
+        /* Resume-based card badge + link */
+        .type-chip {
+            display: inline-block; padding: 2px 8px; border-radius: 4px;
+            font-size: 10px; font-weight: 700; letter-spacing: 0.4px;
+            background: #eef1ff; color: #4b55a3; margin-left: 6px;
+            text-transform: uppercase;
+        }
+        .view-resume-link {
+            font-size: 12px; color: #667eea; text-decoration: none;
+            margin-left: 8px; white-space: nowrap;
+        }
+        .view-resume-link:hover { text-decoration: underline; }
+
+        /* Hide helpers */
+        .mode-panel[hidden] { display: none; }
     </style>
 </head>
 <body>
@@ -242,24 +330,74 @@
                 <button class="modal-close" onclick="closeCreateModal()">&times;</button>
             </div>
             <div id="statusMsg" class="status"></div>
+
+            <!-- Mode-aware nudge — doubles as the mode switcher -->
+            <div id="fresherBanner" class="mode-banner">
+                <div class="icon">i</div>
+                <div class="copy" id="fresherCopy">
+                    <strong>Prepping for campus placements or an entry-level role?</strong>
+                    Upload your resume and we'll tailor questions to a junior role in your field —
+                    no job description needed.
+                </div>
+                <a class="switch-link" id="fresherSwitch" onclick="toggleMode()">Upload resume &rarr;</a>
+            </div>
+
             <form id="interviewForm">
-                <div class="form-group">
-                    <label>Job Title <span class="required">*</span></label>
-                    <input type="text" id="jobTitle" required maxlength="200" placeholder="e.g. Senior Backend Engineer">
+                <!-- Job Description mode -->
+                <div id="panelJd" class="mode-panel">
+                    <div class="form-group">
+                        <label>Job Title <span class="required">*</span></label>
+                        <input type="text" id="jobTitle" maxlength="200" placeholder="e.g. Senior Backend Engineer">
+                    </div>
+                    <div class="form-group">
+                        <label>Job Description <span class="required">*</span></label>
+                        <textarea id="jobDescription" maxlength="50000" placeholder="Paste the full job description here..."></textarea>
+                        <div class="hint">Include required skills, experience, and responsibilities for best results</div>
+                    </div>
+                    <div class="form-group">
+                        <label>Difficulty Level</label>
+                        <select id="difficultyLevel">
+                            <option value="junior">Junior</option>
+                            <option value="intermediate" selected>Intermediate</option>
+                            <option value="senior">Senior</option>
+                        </select>
+                    </div>
                 </div>
-                <div class="form-group">
-                    <label>Job Description <span class="required">*</span></label>
-                    <textarea id="jobDescription" required maxlength="50000" placeholder="Paste the full job description here..."></textarea>
-                    <div class="hint">Include required skills, experience, and responsibilities for best results</div>
+
+                <!-- Resume upload mode -->
+                <div id="panelResume" class="mode-panel" hidden>
+                    <div class="info-box">
+                        <strong>Entry-level / fresher mode.</strong> The interviewer will curate
+                        questions for a junior role in your selected field, drawing on your resume
+                        when it's informative.
+                    </div>
+
+                    <div class="form-group">
+                        <label>Resume (PDF) <span class="required">*</span></label>
+                        <label class="file-input-wrapper" id="fileWrapper">
+                            <div class="file-icon">PDF</div>
+                            <div class="file-text">
+                                <div class="primary" id="fileName">Click to choose a PDF</div>
+                                <div class="secondary">Max 5 MB &middot; PDF only</div>
+                            </div>
+                            <input type="file" id="resumeFile" accept="application/pdf,.pdf">
+                        </label>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Career Field <span class="required">*</span></label>
+                        <select id="targetField">
+                            <option value="" disabled selected>Choose a field...</option>
+                        </select>
+                        <div class="hint">Questions will be anchored to this field — pick what matches your goal.</div>
+                    </div>
+
+                    <div class="form-group" id="customFieldGroup" hidden>
+                        <label>Specify your field <span class="required">*</span></label>
+                        <input type="text" id="targetFieldCustom" maxlength="100" placeholder="e.g. Actuarial Science, Biotech, Quant Research">
+                    </div>
                 </div>
-                <div class="form-group">
-                    <label>Difficulty Level</label>
-                    <select id="difficultyLevel">
-                        <option value="junior">Junior</option>
-                        <option value="intermediate" selected>Intermediate</option>
-                        <option value="senior">Senior</option>
-                    </select>
-                </div>
+
                 <button type="submit" class="submit-btn" id="submitBtn">Create Interview</button>
             </form>
         </div>
@@ -391,10 +529,18 @@
                         : iv.status === 'generating_report' ? 'Generating Report...'
                         : (iv.status || 'created');
 
+                    var isResume = iv.interview_type === 'resume';
+                    var typeChip = isResume ? '<span class="type-chip">Resume</span>' : '';
+                    var fieldLine = isResume && iv.target_field
+                        ? ' &middot; ' + escapeHtml(iv.target_field) : '';
+                    var resumeLink = (isResume && iv.resume_id)
+                        ? '<a class="view-resume-link" href="javascript:void(0)" onclick="viewResume(\'' + iv.resume_id + '\')">View resume</a>'
+                        : '';
+
                     var html = '<div class="info">' +
-                        '<div class="title">' + escapeHtml(iv.job_title || 'Untitled') +
+                        '<div class="title">' + escapeHtml(iv.job_title || 'Untitled') + typeChip +
                         '<span class="badge ' + badgeClass + '">' + statusLabel + '</span></div>' +
-                        '<div class="meta">' + escapeHtml(iv.candidate_name) + ' &middot; ' + dateStr + '</div>' +
+                        '<div class="meta">' + escapeHtml(iv.candidate_name) + ' &middot; ' + dateStr + fieldLine + resumeLink + '</div>' +
                         '</div><div class="actions">';
 
                     if (iv.status === 'created' || iv.status === 'in_progress') {
@@ -460,14 +606,107 @@
         }
 
         /* ---- Modal ---- */
+        var currentMode = 'jd';
+        var resumeFieldsLoaded = false;
+
         function openCreateModal() {
             document.getElementById('createModal').classList.add('visible');
+            // Lazy-load field list the first time the modal opens.
+            if (!resumeFieldsLoaded) loadResumeFields();
+            setMode('jd');
         }
 
         function closeCreateModal() {
             document.getElementById('createModal').classList.remove('visible');
             document.getElementById('interviewForm').reset();
             document.getElementById('statusMsg').className = 'status';
+            document.getElementById('customFieldGroup').hidden = true;
+            document.getElementById('fileWrapper').classList.remove('has-file');
+            document.getElementById('fileName').textContent = 'Click to choose a PDF';
+            setMode('jd');
+        }
+
+        var BANNER_COPY = {
+            jd: {
+                html: "<strong>Prepping for campus placements or an entry-level role?</strong> " +
+                      "Upload your resume and we'll tailor questions to a junior role in your field — " +
+                      "no job description needed.",
+                linkText: "Upload resume \u2192"
+            },
+            resume: {
+                html: "<strong>Have a specific job description in mind?</strong> " +
+                      "Switch back for a more customised technical interview tailored to that exact role.",
+                linkText: "Use job description \u2192"
+            }
+        };
+
+        function setMode(mode) {
+            currentMode = mode;
+            var isJd = mode === 'jd';
+            document.getElementById('panelJd').hidden = !isJd;
+            document.getElementById('panelResume').hidden = isJd;
+            var copy = BANNER_COPY[mode];
+            document.getElementById('fresherCopy').innerHTML = copy.html;
+            document.getElementById('fresherSwitch').textContent = copy.linkText;
+            document.getElementById('statusMsg').className = 'status';
+        }
+
+        function toggleMode() {
+            setMode(currentMode === 'jd' ? 'resume' : 'jd');
+        }
+
+        async function loadResumeFields() {
+            try {
+                var resp = await fetch(API_BASE + '/api/v1/resume-fields');
+                if (!resp.ok) return;
+                var data = await resp.json();
+                var select = document.getElementById('targetField');
+                (data.fields || []).forEach(function(f) {
+                    var opt = document.createElement('option');
+                    opt.value = f;
+                    opt.textContent = f;
+                    select.appendChild(opt);
+                });
+                resumeFieldsLoaded = true;
+            } catch (err) {
+                console.error('Failed to load resume fields:', err);
+            }
+        }
+
+        // Toggle custom field input when "Other" is chosen.
+        document.addEventListener('change', function(e) {
+            if (e.target && e.target.id === 'targetField') {
+                document.getElementById('customFieldGroup').hidden = e.target.value !== 'Other';
+            }
+            if (e.target && e.target.id === 'resumeFile') {
+                var file = e.target.files && e.target.files[0];
+                var wrapper = document.getElementById('fileWrapper');
+                var nameEl = document.getElementById('fileName');
+                if (file) {
+                    wrapper.classList.add('has-file');
+                    nameEl.textContent = file.name;
+                } else {
+                    wrapper.classList.remove('has-file');
+                    nameEl.textContent = 'Click to choose a PDF';
+                }
+            }
+        });
+
+        async function viewResume(resumeId) {
+            try {
+                var resp = await fetch(API_BASE + '/api/v1/resumes/' + encodeURIComponent(resumeId), {
+                    headers: { 'Authorization': 'Bearer ' + idToken }
+                });
+                if (!resp.ok) throw new Error('Failed to fetch resume');
+                var blob = await resp.blob();
+                var url = URL.createObjectURL(blob);
+                window.open(url, '_blank');
+                // Revoke after a delay so the opened tab has time to load it.
+                setTimeout(function() { URL.revokeObjectURL(url); }, 60000);
+            } catch (err) {
+                console.error('Resume view failed:', err);
+                alert('Could not open resume.');
+            }
         }
 
         function showStatus(message, type) {
@@ -516,42 +755,103 @@
         }
 
         /* ---- Form submission ---- */
+        var MAX_RESUME_BYTES = 5 * 1024 * 1024;
+
         document.getElementById('interviewForm').addEventListener('submit', async function(e) {
             e.preventDefault();
 
-            var jobTitle = document.getElementById('jobTitle').value.trim();
-            var jobDescription = document.getElementById('jobDescription').value.trim();
-            var difficultyLevel = document.getElementById('difficultyLevel').value;
+            var submitBtn = document.getElementById('submitBtn');
 
-            if (!jobTitle || !jobDescription) {
-                showStatus('Please fill in all required fields.', 'error');
+            if (currentMode === 'jd') {
+                var jobTitle = document.getElementById('jobTitle').value.trim();
+                var jobDescription = document.getElementById('jobDescription').value.trim();
+                var difficultyLevel = document.getElementById('difficultyLevel').value;
+
+                if (!jobTitle || !jobDescription) {
+                    showStatus('Please fill in all required fields.', 'error');
+                    return;
+                }
+
+                submitBtn.disabled = true;
+                closeCreateModal();
+                showLoadingOverlay();
+
+                try {
+                    var createResp = await fetch(API_BASE + '/api/v1/interviews/create', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': 'Bearer ' + idToken
+                        },
+                        body: JSON.stringify({
+                            job_description: jobDescription,
+                            job_title: jobTitle,
+                            candidate_name: userName,
+                            candidate_email: userEmail,
+                            difficulty_level: difficultyLevel
+                        })
+                    });
+
+                    if (!createResp.ok) {
+                        var errData = await createResp.json().catch(function() { return {}; });
+                        throw new Error(errData.detail || 'Interview creation failed (' + createResp.status + ')');
+                    }
+
+                    hideLoadingOverlay();
+                    await loadDashboard();
+                } catch (err) {
+                    console.error('Error:', err);
+                    hideLoadingOverlay();
+                    openCreateModal();
+                    showStatus(err.message, 'error');
+                } finally {
+                    submitBtn.disabled = false;
+                }
                 return;
             }
 
-            var submitBtn = document.getElementById('submitBtn');
+            /* Resume mode */
+            var fileInput = document.getElementById('resumeFile');
+            var file = fileInput.files && fileInput.files[0];
+            var field = document.getElementById('targetField').value;
+            var customField = document.getElementById('targetFieldCustom').value.trim();
+
+            if (!file) { showStatus('Please choose a PDF resume.', 'error'); return; }
+            if (file.type && file.type !== 'application/pdf' && !/\.pdf$/i.test(file.name)) {
+                showStatus('Only PDF resumes are supported.', 'error');
+                return;
+            }
+            if (file.size > MAX_RESUME_BYTES) {
+                showStatus('Resume is too large. Maximum size is 5 MB.', 'error');
+                return;
+            }
+            if (!field) { showStatus('Please pick a career field.', 'error'); return; }
+            if (field === 'Other' && !customField) {
+                showStatus('Please specify your field.', 'error');
+                return;
+            }
+
             submitBtn.disabled = true;
             closeCreateModal();
             showLoadingOverlay();
 
             try {
-                var createResp = await fetch(API_BASE + '/api/v1/interviews/create', {
+                var form = new FormData();
+                form.append('file', file);
+                form.append('target_field', field);
+                if (field === 'Other') form.append('target_field_custom', customField);
+                form.append('candidate_name', userName || '');
+                form.append('candidate_email', userEmail || '');
+
+                var createResp = await fetch(API_BASE + '/api/v1/interviews/create-from-resume', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': 'Bearer ' + idToken
-                    },
-                    body: JSON.stringify({
-                        job_description: jobDescription,
-                        job_title: jobTitle,
-                        candidate_name: userName,
-                        candidate_email: userEmail,
-                        difficulty_level: difficultyLevel
-                    })
+                    headers: { 'Authorization': 'Bearer ' + idToken },
+                    body: form
                 });
 
                 if (!createResp.ok) {
                     var errData = await createResp.json().catch(function() { return {}; });
-                    throw new Error(errData.detail || 'Interview creation failed (' + createResp.status + ')');
+                    throw new Error(errData.detail || 'Resume-based interview creation failed (' + createResp.status + ')');
                 }
 
                 hideLoadingOverlay();
@@ -560,6 +860,7 @@
                 console.error('Error:', err);
                 hideLoadingOverlay();
                 openCreateModal();
+                setMode('resume');
                 showStatus(err.message, 'error');
             } finally {
                 submitBtn.disabled = false;

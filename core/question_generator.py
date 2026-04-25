@@ -16,10 +16,21 @@ logger = logging.getLogger("question_generator")
 def generate_technical_questions(
     domain_knowledge: Dict,
     difficulty_level: str = "intermediate",
-    num_questions: Optional[int] = None
+    num_questions: Optional[int] = None,
+    *,
+    target_field: Optional[str] = None,
+    resume_text: Optional[str] = None,
+    resume_helpful: bool = False,
 ) -> List[Dict]:
     """
     Generate domain-specific technical interview questions in a single Gemini call.
+
+    When ``target_field`` is provided, the prompt is biased toward an
+    entry-level / fresher framing (college students, recent graduates) and
+    the target field becomes the primary anchor. If ``resume_helpful`` is
+    True, the candidate's concrete skills/projects from ``resume_text`` are
+    weaved into ~1–2 questions. Otherwise the questions are generic but still
+    tailored to the target field.
 
     Returns:
         List of question dicts with question, competency, expected_competencies,
@@ -27,6 +38,10 @@ def generate_technical_questions(
     """
     if not settings.GEMINI_API_KEY:
         raise ValueError("GEMINI_API_KEY is not configured. Please set it in .env file")
+
+    # Resume-based flow always runs at junior difficulty.
+    if target_field:
+        difficulty_level = "junior"
 
     if num_questions is None:
         num_questions = {
@@ -43,8 +58,40 @@ def generate_technical_questions(
     question_types = ["Design/Architecture", "Implementation/Code", "Problem-solving scenario", "Domain-specific expertise"]
     type_distribution = [question_types[i % 4] for i in range(num_questions)]
 
-    prompt = f"""Generate exactly {num_questions} technical interview questions for a {difficulty_level}-level candidate.
+    entry_level_block = ""
+    if target_field:
+        trimmed_resume = (resume_text or "").strip()[:6000]
+        if resume_helpful and trimmed_resume:
+            resume_guidance = (
+                "The candidate's resume WAS informative. Weave 1-2 questions "
+                "around concrete skills, coursework, or projects visible in "
+                "the resume text below. Do not invent experience they don't have."
+            )
+            resume_section = f"\nResume text:\n---\n{trimmed_resume}\n---\n"
+        else:
+            resume_guidance = (
+                "The resume was NOT informative. Generate generic entry-level "
+                "questions appropriate for any fresher in this field — focus on "
+                "fundamentals, introductory concepts, and light problem-solving."
+            )
+            resume_section = ""
 
+        entry_level_block = f"""
+ENTRY-LEVEL / FRESHER CONTEXT:
+- The candidate is a college student or recent graduate with little to no
+  professional experience.
+- Target career field (PRIMARY anchor for all questions): {target_field}
+- Frame questions for an entry-level / campus-placement context. Avoid
+  questions that assume years of industry experience, production incidents,
+  or deep architectural tradeoffs.
+- Emphasize fundamentals, core concepts, basic implementation skills, and
+  clear-thinking problem solving over advanced system design.
+- {resume_guidance}
+{resume_section}
+"""
+
+    prompt = f"""Generate exactly {num_questions} technical interview questions for a {difficulty_level}-level candidate.
+{entry_level_block}
 Domain Knowledge:
 {json.dumps(domain_knowledge, indent=2)}
 
