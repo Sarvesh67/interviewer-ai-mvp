@@ -10,7 +10,8 @@ import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import (
-    Column, DateTime, ForeignKey, Index, JSON, Numeric, String, Text, Uuid,
+    Column, DateTime, ForeignKey, Index, Integer, JSON, LargeBinary,
+    Numeric, String, Text, Uuid,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, relationship
@@ -38,6 +39,26 @@ class User(Base):
     updated_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow)
 
     interviews = relationship("Interview", back_populates="user", lazy="selectin")
+    resumes = relationship("Resume", back_populates="user", lazy="selectin")
+
+
+class Resume(Base):
+    """Uploaded resume file. Referenced by interviews created from a resume
+    so the candidate can later view which version was used."""
+
+    __tablename__ = "resumes"
+
+    id = Column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_id = Column(Uuid, ForeignKey("users.id"), nullable=False, index=True)
+    filename = Column(String(255), nullable=False)
+    content_type = Column(String(100), nullable=False, default="application/pdf")
+    size_bytes = Column(Integer, nullable=False, default=0)
+    file_data = Column(LargeBinary, nullable=False)
+    extracted_text = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
+
+    user = relationship("User", back_populates="resumes")
+    interviews = relationship("Interview", back_populates="resume", lazy="selectin")
 
 
 class Interview(Base):
@@ -54,6 +75,10 @@ class Interview(Base):
     avatar_id = Column(String(200), nullable=True)
     status = Column(String(20), nullable=False, default="created")
     answers = Column(JsonColumn, nullable=True)
+    # Resume-based interview fields (nullable — default flow is job description)
+    interview_type = Column(String(20), nullable=False, default="job_description")
+    target_field = Column(String(100), nullable=True)
+    resume_id = Column(Uuid, ForeignKey("resumes.id"), nullable=True, index=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
     updated_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow)
 
@@ -62,6 +87,7 @@ class Interview(Base):
     )
 
     user = relationship("User", back_populates="interviews")
+    resume = relationship("Resume", back_populates="interviews", lazy="selectin")
     report = relationship("Report", back_populates="interview", uselist=False, lazy="selectin")
 
 

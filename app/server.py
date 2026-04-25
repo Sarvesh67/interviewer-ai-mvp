@@ -13,7 +13,7 @@ from pathlib import Path
 from datetime import datetime, timezone
 from typing import Optional, Dict
 
-from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends, Header, Request
+from fastapi import FastAPI, File, Form, HTTPException, BackgroundTasks, Depends, Header, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
@@ -22,8 +22,15 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import settings, validate_api_keys, get_missing_required_keys, get_missing_realtime_keys
-from core.domain_extraction import extract_domain_knowledge
+from core.domain_extraction import extract_domain_knowledge, extract_domain_from_resume
 from core.question_generator import generate_technical_questions, validate_questions
+from core.resume_parser import (
+    MAX_RESUME_BYTES,
+    ResumeParseError,
+    is_text_useful,
+    parse_pdf_bytes,
+    validate_resume_upload,
+)
 from integrations.hedra import create_hedra_image_avatar, create_interviewer_persona
 from core.session import TechnicalInterviewSession
 from core.answer_scoring import score_all_answers, score_all_answers_batch, calculate_overall_metrics
@@ -31,7 +38,7 @@ from core.report_generator import generate_interview_report, format_report_for_d
 from core.pdf_report import generate_pdf_report
 from agent.manager import RealtimeInterviewManager, register_interview_session
 from db.session import get_db, AsyncSessionLocal
-from db.models import User, Interview, Report
+from db.models import User, Interview, Report, Resume
 
 logger = logging.getLogger("main")
 
@@ -136,6 +143,25 @@ class InterviewRequest(BaseModel):
     candidate_email: str = Field(..., description="Candidate email", max_length=320)
     difficulty_level: Optional[str] = Field("intermediate", description="junior, intermediate, or senior")
     avatar_image_path: Optional[str] = Field(None, description="Optional path to avatar image")
+
+
+# Career fields offered in the resume-based (fresher) flow. The user can pick
+# one of these or choose "Other" and supply a custom label.
+RESUME_TARGET_FIELDS = (
+    "Software Engineering",
+    "Web Development",
+    "Data Science & ML",
+    "Mobile Development",
+    "DevOps & Cloud",
+    "Cybersecurity",
+    "Finance",
+    "Product Management",
+    "Marketing",
+    "Design / UX",
+    "Other",
+)
+# Max length kept in sync with Interview.target_field column.
+MAX_TARGET_FIELD_LEN = 100
 
 
 class AnswerSubmission(BaseModel):
@@ -269,6 +295,9 @@ async def list_interviews(user: dict = Depends(get_current_user), db: AsyncSessi
             "created_at": row.created_at.isoformat() if row.created_at else "",
             "status": row.status,
             "has_report": row.report is not None,
+            "interview_type": row.interview_type or "job_description",
+            "target_field": row.target_field,
+            "resume_id": str(row.resume_id) if row.resume_id else None,
         })
 
     await db.commit()
@@ -386,6 +415,230 @@ async def create_interview(
     except Exception as e:
         logger.error(f"Interview creation failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Interview creation failed. Check server logs.")
+
+
+@app.get("/api/v1/resume-fields")
+def list_resume_fields():
+    """Return the canonical list of career fields for the resume-based flow.
+
+    Public endpoint — the frontend uses this to render the field selector
+    without hardcoding the list in two places.
+    """
+    return {"fields": list(RESUME_TARGET_FIELDS)}
+
+
+def _resolve_target_field(target_field: str, target_field_custom: Optional[str]) -> str:
+    """Validate the field selection and return the final label to persist."""
+    field = (target_field or "").strip()
+    if field not in RESUME_TARGET_FIELDS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"target_field must be one of: {', '.join(RESUME_TARGET_FIELDS)}",
+        )
+    if field == "Other":
+        custom = (target_field_custom or "").strip()
+        if not custom:
+            raise HTTPException(
+                status_code=422,
+                detail="target_field_custom is required when target_field is 'Other'.",
+            )
+        if len(custom) > MAX_TARGET_FIELD_LEN:
+            raise HTTPException(
+                status_code=422,
+                detail=f"target_field_custom must be <= {MAX_TARGET_FIELD_LEN} characters.",
+            )
+        return custom
+    return field
+
+
+@app.post("/api/v1/interviews/create-from-resume")
+@limiter.limit("10/minute")
+async def create_interview_from_resume(
+    request: Request,
+    file: UploadFile = File(..., description="Candidate resume (PDF, <= 5 MB)"),
+    target_field: str = Form(..., description="Career field from /api/v1/resume-fields"),
+    target_field_custom: Optional[str] = Form(None, description="Custom field when target_field == 'Other'"),
+    candidate_name: str = Form(..., max_length=200),
+    candidate_email: str = Form(..., max_length=320),
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Create an entry-level interview tailored to a fresher's resume + chosen field.
+
+    Flow:
+    1. Validate file (PDF, size cap).
+    2. Parse PDF text via pdfplumber — if parsing fails, we still proceed and
+       mark the resume as "not helpful" so the student is never blocked.
+    3. Persist the raw resume bytes in the ``resumes`` table so the candidate
+       can later view which version was used.
+    4. Extract a resume-aware domain_knowledge via Gemini, generate entry-level
+       questions (junior difficulty, field-anchored), and create the Hedra
+       avatar — all in parallel.
+    5. Persist the Interview row with ``interview_type='resume'``.
+    """
+    # Validate API keys up-front — same contract as the JD endpoint.
+    missing_keys = get_missing_required_keys()
+    if missing_keys:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Missing required API keys: {', '.join(missing_keys)}"
+        )
+
+    resolved_field = _resolve_target_field(target_field, target_field_custom)
+
+    # Read + validate file bytes.
+    raw = await file.read()
+    try:
+        validate_resume_upload(file.filename or "", file.content_type or "", len(raw))
+    except ResumeParseError as exc:
+        raise HTTPException(status_code=415, detail=str(exc))
+
+    # Parse PDF — soft failure: we keep going with empty text.
+    try:
+        resume_text = parse_pdf_bytes(raw)
+    except ResumeParseError as exc:
+        logger.warning("Resume parse failed (%s) — continuing with empty text.", exc)
+        resume_text = ""
+
+    resume_helpful_signal = is_text_useful(resume_text)
+
+    try:
+        interview_id = f"interview_{uuid.uuid4().hex[:12]}"
+
+        async def create_avatar():
+            try:
+                return await asyncio.to_thread(create_hedra_image_avatar, avatar_image_path=None)
+            except Exception as e:
+                logger.warning(f"Avatar creation failed, continuing without avatar: {e}")
+                return None
+
+        async def extract_and_generate():
+            domain = await asyncio.to_thread(
+                extract_domain_from_resume, resume_text, resume_field
+            )
+            helpful = bool(domain.get("resume_helpful", resume_helpful_signal))
+            qs = await asyncio.to_thread(
+                generate_technical_questions,
+                domain_knowledge=domain,
+                difficulty_level="junior",
+                target_field=resume_field,
+                resume_text=resume_text if helpful else None,
+                resume_helpful=helpful,
+            )
+            validate_questions(qs)
+            return domain, qs, helpful
+
+        resume_field = resolved_field  # alias for clarity in closure
+        (domain_knowledge, questions, resume_helpful), avatar_id = await asyncio.gather(
+            extract_and_generate(),
+            create_avatar(),
+        )
+
+        candidate_info = {
+            "name": candidate_name,
+            "email": candidate_email.lower(),
+            "position": f"Entry-level candidate — {resolved_field}",
+        }
+
+        user_obj = await get_or_create_user(db, user["email"], user["name"])
+
+        # Persist the resume blob first so we can FK from the interview.
+        resume_row = Resume(
+            user_id=user_obj.id,
+            filename=file.filename or "resume.pdf",
+            content_type=file.content_type or "application/pdf",
+            size_bytes=len(raw),
+            file_data=raw,
+            extracted_text=resume_text or None,
+        )
+        db.add(resume_row)
+        await db.flush()  # populate resume_row.id
+
+        interview_row = Interview(
+            id=interview_id,
+            user_id=user_obj.id,
+            job_title=f"Entry-level — {resolved_field}",
+            candidate_name=candidate_name,
+            candidate_email=candidate_email.lower(),
+            domain_knowledge=domain_knowledge,
+            questions=questions,
+            candidate_info=candidate_info,
+            avatar_id=avatar_id,
+            status="created",
+            interview_type="resume",
+            target_field=resolved_field,
+            resume_id=resume_row.id,
+        )
+        db.add(interview_row)
+        await db.commit()
+
+        session = TechnicalInterviewSession(
+            avatar_id=avatar_id,
+            avatar_image_path=None,
+            job_description={
+                "title": interview_row.job_title,
+                "description": f"Entry-level interview in {resolved_field}. Resume-based.",
+                "domain_knowledge": domain_knowledge,
+            },
+            questions=questions,
+            candidate_info=candidate_info,
+        )
+        register_interview_session(interview_id, session)
+        _persist_interview_for_agent(interview_id, interview_row)
+
+        return {
+            "interview_id": interview_id,
+            "avatar_id": avatar_id,
+            "total_questions": len(questions),
+            "difficulty_level": "junior",
+            "interview_type": "resume",
+            "target_field": resolved_field,
+            "resume_id": str(resume_row.id),
+            "resume_helpful": bool(resume_helpful),
+            "resume_summary": domain_knowledge.get("resume_summary", ""),
+            "domain_areas": domain_knowledge.get("domain_areas", []),
+            "opening_message": session.get_opening_message(),
+            "first_question": questions[0] if questions else None,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Resume-based interview creation failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Interview creation failed. Check server logs.")
+
+
+@app.get("/api/v1/resumes/{resume_id}")
+async def get_resume_file(
+    resume_id: str,
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Stream the owner's stored resume PDF back to them.
+
+    Returns 404 (not 403) when the resume belongs to another user — we don't
+    want to leak existence of unrelated resume IDs.
+    """
+    try:
+        resume_uuid = uuid.UUID(resume_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid resume id.")
+
+    user_obj = await get_or_create_user(db, user["email"], user["name"])
+    await db.commit()
+
+    result = await db.execute(select(Resume).where(Resume.id == resume_uuid))
+    resume_row = result.scalar_one_or_none()
+    if resume_row is None or resume_row.user_id != user_obj.id:
+        raise HTTPException(status_code=404, detail="Resume not found")
+
+    safe_name = "".join(c if c.isalnum() or c in ("-", "_", ".") else "_" for c in resume_row.filename)
+    return Response(
+        content=resume_row.file_data,
+        media_type=resume_row.content_type or "application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{safe_name}"'},
+    )
 
 
 def _persist_interview_for_agent(interview_id: str, row: Interview):
@@ -636,6 +889,9 @@ async def get_interview_details(interview_id: str, user: dict = Depends(get_curr
         "state": session.get_interview_state(),
         "has_report": row.report is not None,
         "created_at": row.created_at.isoformat() if row.created_at else "",
+        "interview_type": row.interview_type or "job_description",
+        "target_field": row.target_field,
+        "resume_id": str(row.resume_id) if row.resume_id else None,
     }
 
 
