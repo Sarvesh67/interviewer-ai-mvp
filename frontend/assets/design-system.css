@@ -1,0 +1,269 @@
+/* =========================================================================
+   26Pixel · Warm Intelligence
+   Shared design system — tokens, resets, and reusable primitives.
+   Loaded by both index.html and realtime_interview.html.
+   ========================================================================= */
+
+/* ---------------------------------------------------------------------------
+   1. DESIGN TOKENS
+   --------------------------------------------------------------------------- */
+:root {
+  /* Surfaces — warm paper tones */
+  --paper:        #F7F4EC;
+  --paper-2:      #EFEADD;
+  --paper-3:      #E1D9C5;
+  --card:         #FFFBF5;
+  --card-edge:    #E1D9C5;
+
+  /* Forest (primary brand) */
+  --forest-50:   #EAF1ED;
+  --forest-100:  #D1DFD7;
+  --forest-200:  #A4BFAF;
+  --forest-300:  #779F87;
+  --forest-400:  #4F7D63;
+  --forest-500:  #2E5C46;
+  --forest-600:  #1B3A2F;
+  --forest-700:  #142E25;
+  --forest-800:  #0F1F1A;
+  --forest-900:  #0A1612;
+
+  /* Terracotta (accent) */
+  --terra-50:    #FBEEE7;
+  --terra-100:   #F5D6C5;
+  --terra-200:   #ECB69B;
+  --terra-300:   #E29671;
+  --terra-400:   #DA7B52;
+  --terra-500:   #D4623A;
+  --terra-600:   #B5511E;
+  --terra-700:   #8E3F17;
+
+  /* Ink (text) */
+  --ink:         #0F1F1A;
+  --ink-2:       #3D4A44;
+  --ink-3:       #6B7670;
+  --ink-4:       #95A09A;
+
+  /* Semantic */
+  --success:     #4F7D63;
+  --success-bg:  #E5EFE8;
+  --warning:     #C68A2E;
+  --warning-bg:  #FAEDCF;
+  --error:       #B83A2A;
+  --error-bg:    #F8DDD7;
+  --info:        #3A6B8E;
+  --info-bg:     #DCEAF3;
+
+  /* Typography */
+  --font-serif:  "Instrument Serif", "Iowan Old Style", Georgia, serif;
+  --font-sans:   "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono:   "JetBrains Mono", ui-monospace, Menlo, monospace;
+
+  /* Radii */
+  --r-xs:  6px;
+  --r-sm:  8px;
+  --r-md:  12px;
+  --r-lg:  16px;
+  --r-xl:  22px;
+  --r-2xl: 28px;
+
+  /* Shadows (warm-tinted, not neutral) */
+  --shadow-sm: 0 1px 2px rgba(15, 31, 26, 0.06);
+  --shadow-md: 0 4px 14px rgba(15, 31, 26, 0.08);
+  --shadow-lg: 0 28px 64px -24px rgba(15, 31, 26, 0.22);
+  --shadow-xl: 0 40px 80px rgba(15, 31, 26, 0.28);
+
+  /* Motion */
+  --ease: cubic-bezier(0.2, 0.6, 0.2, 1);
+}
+
+/* ---------------------------------------------------------------------------
+   2. RESETS & BASE
+   --------------------------------------------------------------------------- */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  font-family: var(--font-sans);
+  color: var(--ink);
+  background: var(--paper);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  line-height: 1.5;
+}
+img, svg { display: block; max-width: 100%; }
+button { font-family: inherit; cursor: pointer; }
+
+::selection { background: var(--terra-200); color: var(--forest-700); }
+
+/* ---------------------------------------------------------------------------
+   3. PRIMITIVES — buttons
+   --------------------------------------------------------------------------- */
+.ds-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 10px 18px;
+  border-radius: 10px;
+  font-size: 13.5px; font-weight: 600;
+  border: none;
+  font-family: var(--font-sans);
+  transition: transform .12s var(--ease), box-shadow .15s var(--ease), background .15s var(--ease);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.ds-btn:hover { transform: translateY(-1px); }
+.ds-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+.ds-btn-primary {
+  background: var(--forest-600); color: var(--paper);
+}
+.ds-btn-primary:hover { background: var(--forest-700); box-shadow: var(--shadow-md); }
+
+.ds-btn-accent {
+  background: var(--terra-500); color: white;
+}
+.ds-btn-accent:hover { background: var(--terra-600); box-shadow: var(--shadow-md); }
+
+.ds-btn-outline {
+  background: var(--card); color: var(--ink);
+  border: 1px solid var(--card-edge);
+}
+.ds-btn-outline:hover { border-color: var(--ink-3); background: var(--paper); }
+
+.ds-btn-ghost {
+  background: transparent; color: var(--forest-600);
+}
+.ds-btn-ghost:hover { background: var(--paper-2); }
+
+.ds-btn-danger {
+  background: var(--error); color: white;
+}
+.ds-btn-danger:hover { background: #9C2E20; box-shadow: var(--shadow-md); }
+
+.ds-btn-sm {
+  padding: 7px 14px; font-size: 12.5px; border-radius: 8px;
+}
+
+/* ---------------------------------------------------------------------------
+   4. PRIMITIVES — form controls
+   --------------------------------------------------------------------------- */
+.ds-field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+.ds-field label {
+  font-size: 12.5px; font-weight: 600; color: var(--ink-2);
+  letter-spacing: 0.01em;
+}
+.ds-field label .required { color: var(--terra-600); margin-left: 2px; }
+.ds-field .ds-hint { font-size: 11.5px; color: var(--ink-3); margin-top: 2px; }
+
+.ds-input, .ds-select, .ds-textarea {
+  width: 100%;
+  background: var(--paper);
+  border: 1px solid var(--card-edge);
+  border-radius: 10px;
+  padding: 11px 14px;
+  font-size: 14px; color: var(--ink);
+  font-family: var(--font-sans);
+  outline: none;
+  transition: border-color .15s var(--ease), box-shadow .15s var(--ease);
+}
+.ds-input::placeholder, .ds-textarea::placeholder { color: var(--ink-4); }
+.ds-input:focus, .ds-select:focus, .ds-textarea:focus {
+  border-color: var(--forest-500);
+  box-shadow: 0 0 0 3px rgba(46, 92, 70, 0.12);
+}
+.ds-textarea { min-height: 130px; resize: vertical; line-height: 1.5; }
+.ds-select {
+  appearance: none; -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%236B7670' d='M6 8L0 0h12z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+  padding-right: 36px;
+}
+
+/* ---------------------------------------------------------------------------
+   5. PRIMITIVES — chips / badges / status pills
+   --------------------------------------------------------------------------- */
+.ds-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 10px; border-radius: 999px;
+  font-size: 11.5px; font-weight: 500;
+  background: var(--paper-2); color: var(--ink-2);
+  border: 1px solid var(--card-edge);
+}
+
+/* Status pill — warm pulse for live states */
+.ds-pill {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 4px 11px; border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 10.5px; font-weight: 600;
+  letter-spacing: 0.06em; text-transform: uppercase;
+}
+.ds-pill .ds-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  flex-shrink: 0;
+}
+
+@keyframes ds-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+/* ---------------------------------------------------------------------------
+   6. PRIMITIVES — card
+   --------------------------------------------------------------------------- */
+.ds-card {
+  background: var(--card);
+  border: 1px solid var(--card-edge);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+/* ---------------------------------------------------------------------------
+   7. PRIMITIVES — brand mark
+   --------------------------------------------------------------------------- */
+.ds-brand {
+  display: inline-flex; align-items: center; gap: 10px;
+  font-family: var(--font-serif);
+  font-size: 22px;
+  color: var(--forest-600);
+  letter-spacing: -0.01em;
+  font-weight: 400;
+}
+.ds-brand .ds-brand-mark {
+  width: 32px; height: 32px;
+  border-radius: 9px;
+  background: var(--forest-600); color: var(--paper);
+  display: grid; place-items: center;
+  font-family: var(--font-serif);
+  font-size: 18px;
+  flex-shrink: 0;
+}
+.ds-brand .ds-brand-mark::before { content: "26"; font-size: 13px; font-weight: 500; }
+
+/* Brand on dark surface */
+.ds-brand--dark { color: var(--paper); }
+.ds-brand--dark .ds-brand-mark { background: var(--terra-500); color: var(--forest-900); }
+
+/* ---------------------------------------------------------------------------
+   8. UTILITIES
+   --------------------------------------------------------------------------- */
+.ds-sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+}
+
+@keyframes ds-spin { to { transform: rotate(360deg); } }
+@keyframes ds-fade-up {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes ds-blink { 50% { opacity: 0; } }
+
+/* ---------------------------------------------------------------------------
+   9. SCROLLBAR (subtle, warm)
+   --------------------------------------------------------------------------- */
+.ds-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
+.ds-scroll::-webkit-scrollbar-track { background: transparent; }
+.ds-scroll::-webkit-scrollbar-thumb {
+  background: var(--card-edge);
+  border-radius: 4px;
+}
+.ds-scroll::-webkit-scrollbar-thumb:hover { background: var(--ink-4); }
