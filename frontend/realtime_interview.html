@@ -3,351 +3,511 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Live Technical Interview</title>
+    <title>Live Interview · 26Pixel</title>
+
+    <!-- LiveKit -->
     <script src="https://cdn.jsdelivr.net/npm/livekit-client/dist/livekit-client.umd.min.js"></script>
+
+    <!-- Type -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Instrument+Serif&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+    <!-- Shared design system -->
+    <link rel="stylesheet" href="/assets/design-system.css">
+
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
+        /* =====================================================================
+           PAGE-SPECIFIC LAYOUT — realtime_interview.html
+           Full-bleed dark forest "studio" with right-side context panel.
+           Every JS-touched ID and class from the original page is preserved.
+           ===================================================================== */
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: var(--forest-800);
+            color: var(--paper);
             min-height: 100vh;
-            padding: 16px;
+            font-family: var(--font-sans);
         }
 
         .page-container {
-            max-width: 1400px;
+            max-width: 1480px;
             margin: 0 auto;
+            padding: 20px 24px 28px;
+            min-height: 100vh;
+            display: flex; flex-direction: column;
         }
 
-        /* Header */
+        /* ---------- Header ---------- */
         .header {
-            text-align: center;
-            color: white;
+            display: flex; align-items: center; justify-content: space-between;
+            gap: 24px;
+            padding-bottom: 18px;
             margin-bottom: 16px;
+            border-bottom: 1px solid rgba(247, 244, 236, 0.08);
         }
-        .header h1 { font-size: 22px; margin-bottom: 4px; }
-        .header .subtitle { font-size: 13px; opacity: 0.8; }
+        .header h1 {
+            font-family: var(--font-serif); font-weight: 400;
+            font-size: 22px; letter-spacing: -0.01em;
+            color: var(--paper); margin: 0; line-height: 1.2;
+        }
+        .header .subtitle {
+            font-size: 12.5px; color: rgba(247, 244, 236, 0.55);
+            margin-top: 2px;
+        }
+        .header-meta { display: flex; align-items: center; gap: 14px; }
 
-        /* Status bar */
+        /* ---------- Status bar ---------- */
         .status-bar {
             padding: 10px 16px;
-            border-radius: 10px;
+            border-radius: var(--r-md);
             text-align: center;
+            font-family: var(--font-mono);
+            font-size: 12px;
             font-weight: 500;
-            font-size: 14px;
+            letter-spacing: 0.04em;
             margin-bottom: 16px;
-            transition: all 0.3s;
+            border: 1px solid transparent;
+            transition: all .25s var(--ease);
         }
         .status-bar.hidden { display: none; }
-        .status-bar.connecting { background: #fff3cd; color: #856404; }
-        .status-bar.connected { background: #d4edda; color: #155724; }
-        .status-bar.error { background: #f8d7da; color: #721c24; }
+        .status-bar.connecting {
+            background: rgba(198, 138, 46, 0.14);
+            color: #F2D27D;
+            border-color: rgba(198, 138, 46, 0.3);
+        }
+        .status-bar.connected {
+            background: rgba(79, 125, 99, 0.18);
+            color: #B6D2C2;
+            border-color: rgba(79, 125, 99, 0.35);
+        }
+        .status-bar.error {
+            background: rgba(184, 58, 42, 0.18);
+            color: #F1A89A;
+            border-color: rgba(184, 58, 42, 0.4);
+        }
 
-        /* Main layout: left (video) + right (questions + transcript) */
+        /* ---------- Interview timer (kept selectors for warning/critical) ---------- */
+        .interview-timer {
+            display: none;
+            align-items: center; gap: 14px;
+            padding: 8px 16px;
+            background: rgba(247, 244, 236, 0.06);
+            border: 1px solid rgba(247, 244, 236, 0.1);
+            border-radius: 999px;
+            font-family: var(--font-mono);
+        }
+        .interview-timer.visible { display: inline-flex; }
+        .interview-timer .time-display {
+            font-size: 18px;
+            font-weight: 600;
+            font-variant-numeric: tabular-nums;
+            color: var(--paper);
+            letter-spacing: 0.04em;
+        }
+        .interview-timer .time-label {
+            font-size: 9.5px;
+            color: rgba(247, 244, 236, 0.5);
+            text-transform: uppercase;
+            letter-spacing: 0.16em;
+        }
+        .interview-timer.warning  { border-color: rgba(198, 138, 46, 0.5); }
+        .interview-timer.warning  .time-display { color: #F2C77D; }
+        .interview-timer.critical { border-color: rgba(184, 58, 42, 0.55); background: rgba(184, 58, 42, 0.12); }
+        .interview-timer.critical .time-display { color: #F1A89A; }
+
+        /* ---------- Main layout ---------- */
         .main-layout {
-            display: flex;
-            gap: 16px;
-            align-items: flex-start;
-        }
-
-        .left-panel {
             flex: 1;
-            min-width: 0;
+            display: grid;
+            grid-template-columns: 1fr 380px;
+            gap: 18px;
+            align-items: stretch;
+        }
+        @media (max-width: 980px) {
+            .main-layout { grid-template-columns: 1fr; }
         }
 
+        .left-panel { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
         .right-panel {
-            width: 360px;
-            flex-shrink: 0;
             display: none;
             flex-direction: column;
             gap: 12px;
-            max-height: calc(100vh - 140px);
+            min-height: 0;
         }
         .right-panel.visible { display: flex; }
-
-        @media (max-width: 900px) {
-            .main-layout { flex-direction: column; }
-            .right-panel { width: 100%; max-height: 50vh; }
+        @media (max-width: 980px) {
+            .right-panel { max-height: 60vh; }
         }
 
-        /* Interview info card */
+        /* ---------- Interview info card (the "Position / Candidate / Questions" tile) ---------- */
         .interview-info {
-            background: white;
-            padding: 14px 16px;
-            border-radius: 10px;
-            margin-bottom: 12px;
-            font-size: 13px;
             display: none;
+            background: rgba(247, 244, 236, 0.04);
+            border: 1px solid rgba(247, 244, 236, 0.08);
+            border-radius: var(--r-md);
+            padding: 16px 20px;
         }
-        .interview-info.visible { display: block; }
-        .interview-info h3 { font-size: 14px; margin-bottom: 8px; color: #333; }
-        .interview-info p { color: #666; margin: 3px 0; }
+        .interview-info.visible { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+        @media (max-width: 720px) { .interview-info.visible { grid-template-columns: 1fr; } }
+        .interview-info h3 {
+            display: none; /* hidden in new layout — info comes from individual cells */
+        }
+        .interview-info p {
+            margin: 0;
+            display: flex; flex-direction: column; gap: 4px;
+            color: var(--paper);
+        }
+        .interview-info p strong {
+            font-family: var(--font-mono);
+            font-size: 9.5px; font-weight: 600;
+            letter-spacing: 0.16em; text-transform: uppercase;
+            color: rgba(247, 244, 236, 0.5);
+        }
+        .interview-info p span {
+            font-family: var(--font-serif);
+            font-size: 20px; font-weight: 400;
+            color: var(--paper);
+            letter-spacing: -0.01em;
+            line-height: 1.2;
+        }
 
-        /* Video area */
+        /* ---------- Video container ---------- */
         .video-container {
             display: flex;
             justify-content: center;
-            gap: 12px;
-            margin-bottom: 12px;
-            transition: all 0.4s ease;
+            gap: 16px;
+            transition: all .4s var(--ease);
         }
         .video-box {
             position: relative;
-            background: #000;
-            border-radius: 10px;
+            background: linear-gradient(135deg, #2A4A3B, var(--forest-800));
+            border-radius: var(--r-lg);
             overflow: hidden;
             aspect-ratio: 16/9;
             width: 100%;
-            max-width: 560px;
-            transition: all 0.4s ease;
+            max-width: 760px;
+            border: 1px solid rgba(247, 244, 236, 0.08);
+            transition: all .4s var(--ease);
         }
         .video-container.two-up .video-box {
             max-width: none;
-            width: calc(50% - 6px);
+            width: calc(50% - 8px);
         }
-        @media (max-width: 700px) {
+        @media (max-width: 760px) {
             .video-container.two-up { flex-direction: column; align-items: center; }
-            .video-container.two-up .video-box { width: 100%; max-width: 560px; }
+            .video-container.two-up .video-box { width: 100%; max-width: 600px; }
         }
-        .video-box video { width: 100%; height: 100%; object-fit: cover; }
+        .video-box video {
+            width: 100%; height: 100%;
+            object-fit: cover;
+            display: block;
+        }
         .video-label {
-            position: absolute; bottom: 8px; left: 8px;
-            background: rgba(0,0,0,0.7); color: white;
-            padding: 3px 8px; border-radius: 4px; font-size: 11px;
+            position: absolute; bottom: 12px; left: 12px;
+            background: rgba(15, 31, 26, 0.7);
+            backdrop-filter: blur(8px);
+            color: var(--paper);
+            padding: 5px 11px;
+            border-radius: 999px;
+            font-size: 11px; font-weight: 600;
+            letter-spacing: 0.02em;
         }
+        /* Decorative monogram while video isn't yet streaming */
+        .video-box::before {
+            content: attr(data-monogram);
+            position: absolute; inset: 0;
+            display: grid; place-items: center;
+            font-family: var(--font-serif);
+            font-size: 64px; font-weight: 400;
+            color: rgba(247, 244, 236, 0.3);
+            pointer-events: none;
+            transition: opacity .3s var(--ease);
+        }
+        .video-box:has(video[srcobject]):before,
+        .video-box:has(video[src]):before { opacity: 0; }
+        #remoteVideoBox { background: linear-gradient(135deg, var(--terra-700), var(--forest-700)); }
+        #remoteVideoBox::before { color: rgba(247, 244, 236, 0.7); }
+
         .hidden { display: none !important; }
 
-        /* Controls */
+        /* ---------- Controls ---------- */
         .controls {
-            display: flex; gap: 10px; justify-content: center; margin-top: 12px;
+            display: flex; gap: 10px; justify-content: center; align-items: center;
+            margin-top: 4px;
+            flex-wrap: wrap;
         }
+        /* Reset baseline button styles for this page (they cascade from the original) */
         button, .btn-link {
-            padding: 10px 20px; border: none; border-radius: 8px;
-            font-size: 15px; font-weight: 600; cursor: pointer;
-            transition: all 0.2s; text-decoration: none; display: inline-block;
+            padding: 10px 20px; border: none; border-radius: 10px;
+            font-size: 13.5px; font-weight: 600;
+            cursor: pointer;
+            font-family: var(--font-sans);
+            transition: transform .12s var(--ease), background .15s var(--ease), box-shadow .15s var(--ease);
+            text-decoration: none; display: inline-block;
         }
-        button:hover, .btn-link:hover {
-            transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-        }
-        .btn-primary { background: #667eea; color: white; }
-        .btn-primary:hover { background: #5568d3; }
-        .btn-danger { background: #e74c3c; color: white; }
-        .btn-danger:hover { background: #c0392b; }
-        .btn-secondary { background: #6c757d; color: white; }
+        button:hover, .btn-link:hover { transform: translateY(-1px); }
 
-        /* Right panel: Question list */
+        .btn-primary {
+            background: var(--terra-500); color: white;
+        }
+        .btn-primary:hover { background: var(--terra-600); box-shadow: var(--shadow-md); }
+
+        .btn-secondary {
+            background: rgba(247, 244, 236, 0.08);
+            color: var(--paper);
+            border: 1px solid rgba(247, 244, 236, 0.12);
+        }
+        .btn-secondary:hover { background: rgba(247, 244, 236, 0.14); }
+
+        .btn-danger { background: var(--error); color: white; }
+        .btn-danger:hover { background: #9C2E20; box-shadow: var(--shadow-md); }
+
+        /* ---------- Right panel: Question list ---------- */
         .question-panel {
-            background: white;
-            border-radius: 10px;
+            background: var(--forest-900);
+            border: 1px solid rgba(247, 244, 236, 0.08);
+            border-radius: var(--r-lg);
             overflow: hidden;
-            max-height: 40%;
-            display: flex;
-            flex-direction: column;
+            display: flex; flex-direction: column;
+            max-height: 45%;
+            min-height: 220px;
         }
         .question-panel-header {
-            padding: 10px 14px;
-            font-size: 13px;
-            font-weight: 600;
-            color: #333;
-            border-bottom: 1px solid #e9ecef;
-            background: #f8f9fa;
+            padding: 14px 18px;
+            font-family: var(--font-mono);
+            font-size: 10.5px;
+            font-weight: 600; letter-spacing: 0.14em;
+            color: rgba(247, 244, 236, 0.6);
+            text-transform: uppercase;
+            border-bottom: 1px solid rgba(247, 244, 236, 0.08);
+            background: rgba(247, 244, 236, 0.02);
+            display: flex; align-items: center; justify-content: space-between;
             flex-shrink: 0;
         }
+        .question-panel-header span { color: var(--terra-300); }
+
         .question-list {
             overflow-y: auto;
             flex: 1;
+            padding: 8px;
         }
+        .question-list::-webkit-scrollbar { width: 8px; }
+        .question-list::-webkit-scrollbar-track { background: transparent; }
+        .question-list::-webkit-scrollbar-thumb {
+            background: rgba(247, 244, 236, 0.1); border-radius: 4px;
+        }
+        .question-list::-webkit-scrollbar-thumb:hover { background: rgba(247, 244, 236, 0.2); }
+
+        /* q-item — kept selector + state classes (active / answered / skipped) */
         .q-item {
-            padding: 10px 14px;
-            border-bottom: 1px solid #f0f0f0;
-            font-size: 13px;
-            color: #666;
-            border-left: 3px solid transparent;
-            transition: all 0.3s;
             display: flex;
-            gap: 8px;
-            align-items: flex-start;
+            gap: 10px;
+            padding: 10px 12px;
+            margin-bottom: 4px;
+            border-radius: 10px;
+            font-size: 13px;
+            line-height: 1.45;
+            color: rgba(247, 244, 236, 0.6);
+            background: rgba(247, 244, 236, 0.03);
+            border: 1px solid transparent;
+            transition: all .25s var(--ease);
         }
-        .q-item:last-child { border-bottom: none; }
-        .q-item .q-icon { flex-shrink: 0; font-size: 12px; margin-top: 2px; }
+        .q-item:last-child { margin-bottom: 0; }
+        .q-item .q-icon {
+            flex-shrink: 0;
+            font-size: 12px;
+            margin-top: 2px;
+            opacity: 0.7;
+        }
 
         .q-item.active {
-            border-left-color: #667eea;
-            background: #f0f2ff;
-            color: #333;
-            font-weight: 500;
+            background: var(--terra-700);
+            color: var(--paper);
+            border-color: var(--terra-500);
         }
-        .q-item.active .q-icon { color: #667eea; }
+        .q-item.active .q-icon {
+            color: var(--terra-300);
+            opacity: 1;
+            animation: ds-pulse 1.6s ease-in-out infinite;
+        }
 
         .q-item.answered {
-            border-left-color: #28a745;
-            opacity: 0.6;
+            opacity: 0.55;
+            background: rgba(79, 125, 99, 0.08);
         }
-        .q-item.answered .q-icon { color: #28a745; }
+        .q-item.answered .q-icon { color: var(--success); opacity: 1; }
 
         .q-item.skipped {
-            border-left-color: #999;
-            opacity: 0.5;
+            opacity: 0.4;
         }
-        .q-item.skipped .q-icon { color: #999; }
+        .q-item.skipped .q-icon { color: rgba(247, 244, 236, 0.4); }
 
-        /* Pulsing dot for active question */
-        @keyframes pulse-dot {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.3; }
-        }
-        .q-item.active .q-icon { animation: pulse-dot 1.5s ease-in-out infinite; }
-
-        /* Right panel: Transcript */
+        /* ---------- Right panel: Transcript ---------- */
         .transcript-panel {
-            background: white;
-            border-radius: 10px;
+            background: var(--forest-900);
+            border: 1px solid rgba(247, 244, 236, 0.08);
+            border-radius: var(--r-lg);
             flex: 1;
             overflow: hidden;
-            display: flex;
-            flex-direction: column;
-            min-height: 200px;
+            display: flex; flex-direction: column;
+            min-height: 220px;
         }
         .transcript-panel-header {
-            padding: 10px 14px;
-            font-size: 13px;
-            font-weight: 600;
-            color: #333;
-            border-bottom: 1px solid #e9ecef;
-            background: #f8f9fa;
+            padding: 14px 18px;
+            font-family: var(--font-mono);
+            font-size: 10.5px;
+            font-weight: 600; letter-spacing: 0.14em;
+            color: rgba(247, 244, 236, 0.6);
+            text-transform: uppercase;
+            border-bottom: 1px solid rgba(247, 244, 236, 0.08);
+            background: rgba(247, 244, 236, 0.02);
             flex-shrink: 0;
+            display: flex; align-items: center; justify-content: space-between;
         }
+        .transcript-panel-header::after {
+            content: "live";
+            color: var(--terra-300);
+            font-weight: 600;
+        }
+
         .transcript-list {
             overflow-y: auto;
             flex: 1;
-            padding: 8px 0;
+            padding: 12px 8px;
+            display: flex; flex-direction: column; gap: 8px;
         }
+        .transcript-list::-webkit-scrollbar { width: 8px; }
+        .transcript-list::-webkit-scrollbar-track { background: transparent; }
+        .transcript-list::-webkit-scrollbar-thumb {
+            background: rgba(247, 244, 236, 0.1); border-radius: 4px;
+        }
+        .transcript-list::-webkit-scrollbar-thumb:hover { background: rgba(247, 244, 236, 0.2); }
+
+        .transcript-empty {
+            padding: 28px 16px;
+            text-align: center;
+            color: rgba(247, 244, 236, 0.4);
+            font-size: 12.5px;
+        }
+
+        /* transcript-entry — kept selector and modifier classes */
         .transcript-entry {
-            padding: 6px 14px;
+            display: flex; flex-direction: column; gap: 4px;
+            padding: 10px 12px;
+            border-radius: 10px;
             font-size: 13px;
-            line-height: 1.4;
+            line-height: 1.5;
+        }
+        .transcript-entry.interviewer {
+            background: rgba(212, 98, 58, 0.1);
+            border: 1px solid rgba(212, 98, 58, 0.18);
+        }
+        .transcript-entry.candidate {
+            background: rgba(119, 159, 135, 0.08);
+            border: 1px solid rgba(119, 159, 135, 0.18);
         }
         .transcript-entry .speaker-label {
-            font-weight: 600;
-            font-size: 11px;
+            font-family: var(--font-mono);
+            font-size: 9.5px; font-weight: 600;
+            letter-spacing: 0.14em;
             text-transform: uppercase;
             display: block;
-            margin-bottom: 2px;
         }
-        .transcript-entry.interviewer .speaker-label { color: #667eea; }
-        .transcript-entry.candidate .speaker-label { color: #28a745; }
-        .transcript-entry .transcript-text { color: #444; }
+        .transcript-entry.interviewer .speaker-label { color: var(--terra-300); }
+        .transcript-entry.candidate .speaker-label { color: var(--forest-300); }
+        .transcript-entry .transcript-text {
+            color: rgba(247, 244, 236, 0.85);
+        }
 
-        /* Interim transcript styling */
+        /* Interim transcript — italic faded with blinking caret */
         .transcript-entry.interim .transcript-text {
-            opacity: 0.5;
+            opacity: 0.55;
             font-style: italic;
         }
         .transcript-entry.interim::after {
             content: '';
             display: inline-block;
-            width: 3px;
-            height: 13px;
-            background: #667eea;
-            margin-left: 2px;
+            width: 3px; height: 14px;
+            background: var(--terra-400);
+            margin-left: 4px;
             vertical-align: text-bottom;
-            animation: blink-cursor 0.8s step-end infinite;
-        }
-        @keyframes blink-cursor { 50% { opacity: 0; } }
-
-        /* Interview timer */
-        .interview-timer {
-            display: none;
-            text-align: center;
-            padding: 8px 16px;
-            background: rgba(255,255,255,0.95);
-            border-radius: 8px;
-            margin-bottom: 12px;
-            font-size: 13px;
-            color: #666;
-            border: 1px solid #e9ecef;
-        }
-        .interview-timer.visible { display: block; }
-        .interview-timer .time-display {
-            font-size: 22px;
-            font-weight: 700;
-            font-variant-numeric: tabular-nums;
-            color: #333;
-            letter-spacing: 1px;
-        }
-        .interview-timer .time-label {
-            font-size: 11px;
-            color: #999;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
-        .interview-timer.warning .time-display { color: #e67e22; }
-        .interview-timer.critical .time-display { color: #e74c3c; }
-
-        .transcript-empty {
-            padding: 20px 14px;
-            text-align: center;
-            color: #bbb;
-            font-size: 13px;
+            animation: ds-blink 0.85s step-end infinite;
         }
     </style>
 </head>
 <body>
     <div class="page-container">
+        <!-- ============================================================= -->
+        <!-- Header                                                          -->
+        <!-- ============================================================= -->
         <div class="header">
-            <h1>Live Technical Interview</h1>
-            <p class="subtitle">Real-time conversation with AI interviewer</p>
+            <div style="display: flex; align-items: center; gap: 18px;">
+                <div class="ds-brand ds-brand--dark">
+                    <span class="ds-brand-mark"></span>26Pixel
+                </div>
+                <div style="border-left: 1px solid rgba(247,244,236,0.12); padding-left: 18px;">
+                    <h1>Live interview</h1>
+                    <p class="subtitle">Real-time conversation with AI interviewer</p>
+                </div>
+            </div>
+            <div class="header-meta">
+                <div id="interviewTimer" class="interview-timer">
+                    <div class="time-label">Time left</div>
+                    <div id="timerDisplay" class="time-display">45:00</div>
+                </div>
+            </div>
         </div>
 
         <div id="statusBar" class="status-bar hidden"></div>
 
-        <div id="interviewTimer" class="interview-timer">
-            <div class="time-label">Time Remaining</div>
-            <div id="timerDisplay" class="time-display">45:00</div>
-        </div>
-
+        <!-- ============================================================= -->
+        <!-- Main layout                                                     -->
+        <!-- ============================================================= -->
         <div class="main-layout">
-            <!-- Left: Video + Controls -->
+            <!-- Left: video + controls -->
             <div class="left-panel">
                 <div id="interviewInfo" class="interview-info">
                     <h3>Interview Details</h3>
-                    <p><strong>Position:</strong> <span id="jobTitle"></span></p>
-                    <p><strong>Candidate:</strong> <span id="candidateName"></span></p>
-                    <p><strong>Questions:</strong> <span id="totalQuestions"></span></p>
+                    <p><strong>Role</strong><span id="jobTitle"></span></p>
+                    <p><strong>Candidate</strong><span id="candidateName"></span></p>
+                    <p><strong>Questions</strong><span id="totalQuestions"></span></p>
                 </div>
 
                 <div class="video-container" id="videoContainer">
-                    <div class="video-box" id="localVideoBox">
+                    <div class="video-box" id="localVideoBox" data-monogram="You">
                         <video id="localVideo" autoplay muted playsinline></video>
                         <div class="video-label">You</div>
                     </div>
-                    <div class="video-box hidden" id="remoteVideoBox">
+                    <div class="video-box hidden" id="remoteVideoBox" data-monogram="A">
                         <video id="remoteVideo" autoplay playsinline></video>
                         <div class="video-label">Interviewer</div>
                     </div>
                 </div>
 
                 <div class="controls">
-                    <a id="backBtnPre" href="/" class="btn-link btn-secondary">Back to Dashboard</a>
-                    <button id="connectBtn" class="btn-primary">Connect to Interview</button>
-                    <button id="disconnectBtn" class="btn-danger hidden">End Interview</button>
+                    <a id="backBtnPre" href="/" class="btn-link btn-secondary">← Back to dashboard</a>
+                    <button id="connectBtn" class="btn-primary">Connect to interview</button>
+                    <button id="disconnectBtn" class="btn-danger hidden">End interview</button>
                 </div>
             </div>
 
-            <!-- Right: Questions + Transcript (shown after connect) -->
+            <!-- Right: questions + transcript (revealed after connect) -->
             <div id="rightPanel" class="right-panel">
                 <div class="question-panel">
                     <div class="question-panel-header">
-                        Question <span id="qCurrent">-</span> of <span id="qTotal">-</span>
+                        <span>Questions</span>
+                        <span><span id="qCurrent">-</span> / <span id="qTotal">-</span></span>
                     </div>
                     <div id="questionList" class="question-list"></div>
                 </div>
 
                 <div class="transcript-panel">
-                    <div class="transcript-panel-header">Transcript</div>
+                    <div class="transcript-panel-header">
+                        <span>Transcript</span>
+                    </div>
                     <div id="transcriptList" class="transcript-list">
-                        <div class="transcript-empty">Transcript will appear here...</div>
+                        <div class="transcript-empty">Transcript will appear here once the interview begins.</div>
                     </div>
                 </div>
             </div>

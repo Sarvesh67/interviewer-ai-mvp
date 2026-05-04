@@ -3,332 +3,687 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="Content-Security-Policy" content="script-src 'self' https://accounts.google.com 'unsafe-inline'; style-src 'self' https://accounts.google.com 'unsafe-inline';">
-    <title>26Pixel - AI Technical Interviewer</title>
+    <meta http-equiv="Content-Security-Policy" content="script-src 'self' https://accounts.google.com 'unsafe-inline'; style-src 'self' https://accounts.google.com https://fonts.googleapis.com 'unsafe-inline'; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:;">
+    <title>26Pixel · AI Technical Interviewer</title>
+
+    <!-- Google Identity Services -->
     <script src="https://accounts.google.com/gsi/client" async defer></script>
+
+    <!-- Type -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Instrument+Serif&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+    <!-- Shared design system -->
+    <link rel="stylesheet" href="/assets/design-system.css">
+
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
+        /* =====================================================================
+           PAGE-SPECIFIC LAYOUT — index.html
+           Two top-level views layered in the same DOM:
+             - .auth-shell  → visible while #signinPrompt is on screen
+             - .app-shell   → visible after sign-in (#signinPrompt hidden by JS)
+           Toggle is purely CSS (uses :has) — no JS changes required.
+           ===================================================================== */
 
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        body { background: var(--paper); min-height: 100vh; }
+
+        /* Default: show auth, hide app */
+        .auth-shell { display: grid; }
+        .app-shell  { display: none; }
+
+        /* When JS hides signinPrompt (via inline style="display:none"),
+           swap the views without touching JS. */
+        body:has(#signinPrompt[style*="display: none"]) .auth-shell,
+        body:has(#signinPrompt[style*="display:none"])  .auth-shell { display: none; }
+        body:has(#signinPrompt[style*="display: none"]) .app-shell,
+        body:has(#signinPrompt[style*="display:none"])  .app-shell  { display: grid; }
+
+        /* ---------- AUTH SHELL — editorial split ---------- */
+        .auth-shell {
+            grid-template-columns: 1.05fr 1fr;
             min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 20px;
+            background: var(--paper);
+        }
+        @media (max-width: 880px) { .auth-shell { grid-template-columns: 1fr; } }
+
+        .auth-hero {
+            padding: 64px 56px 48px;
+            display: flex; flex-direction: column; gap: 36px;
+            background:
+              radial-gradient(900px 500px at -100px 100%, rgba(212, 98, 58, 0.08), transparent 60%),
+              var(--paper);
+        }
+        .auth-eyebrow {
+            font-family: var(--font-mono);
+            font-size: 11px; letter-spacing: 0.18em;
+            color: var(--terra-600); text-transform: uppercase;
+        }
+        .auth-headline {
+            font-family: var(--font-serif);
+            font-size: clamp(40px, 5vw, 60px);
+            line-height: 1.04;
+            color: var(--forest-700);
+            font-weight: 400;
+            letter-spacing: -0.02em;
+            margin: 0;
+        }
+        .auth-headline em { font-style: normal; color: var(--terra-500); }
+        .auth-sub {
+            font-size: 16px; color: var(--ink-2); line-height: 1.55;
+            max-width: 480px; margin: 0;
+        }
+        .auth-hero-foot {
+            margin-top: auto;
+            display: flex; gap: 18px; flex-wrap: wrap;
+            font-size: 12px; color: var(--ink-3);
+        }
+        .auth-hero-foot a { color: var(--ink-3); text-decoration: none; }
+        .auth-hero-foot a:hover { color: var(--ink); }
+        .auth-hero-foot .spacer { margin-left: auto; }
+
+        .auth-aside {
+            background: var(--paper-2);
+            border-left: 1px solid var(--paper-3);
+            padding: 56px;
+            display: grid; place-items: center;
+        }
+        @media (max-width: 880px) {
+            .auth-aside { border-left: none; border-top: 1px solid var(--paper-3); padding: 40px 24px; }
+            .auth-hero  { padding: 40px 24px; }
         }
 
-        .container {
-            background: white;
-            border-radius: 20px;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-            max-width: 900px;
-            width: 100%;
-            padding: 40px;
+        .signin-card {
+            background: var(--card);
+            border: 1px solid var(--card-edge);
+            border-radius: var(--r-xl);
+            padding: 36px 32px;
+            width: 100%; max-width: 400px;
+            box-shadow: var(--shadow-md);
+            animation: ds-fade-up .4s var(--ease) both;
         }
-
-        .brand {
-            text-align: center; margin-bottom: 8px; font-size: 14px;
-            font-weight: 600; color: #667eea; letter-spacing: 2px; text-transform: uppercase;
+        .signin-card h2 {
+            font-family: var(--font-serif);
+            font-size: 28px; font-weight: 400;
+            color: var(--ink); margin: 0 0 6px;
+            letter-spacing: -0.01em;
         }
-
-        h1 { color: #333; text-align: center; margin-bottom: 6px; font-size: 24px; }
-        .subtitle { color: #666; text-align: center; margin-bottom: 30px; font-size: 14px; }
-
-        /* Sign-in */
-        .signin-section {
-            text-align: center; padding: 30px 0;
-            border-bottom: 1px solid #e9ecef; margin-bottom: 30px;
+        .signin-card .signin-blurb {
+            font-size: 13px; color: var(--ink-3);
+            margin: 0 0 24px;
         }
-        .signin-section p { color: #666; margin-bottom: 16px; font-size: 14px; }
+        /* Wrapper around Google's rendered button */
         #g_id_onload_container { display: flex; justify-content: center; }
+        #g_id_signin { width: 100%; }
 
+        .signin-divider {
+            display: flex; align-items: center; gap: 12px;
+            margin: 22px 0 18px;
+            font-size: 10.5px; color: var(--ink-4);
+            font-family: var(--font-mono); letter-spacing: 0.1em;
+            text-transform: uppercase;
+        }
+        .signin-divider::before, .signin-divider::after {
+            content: ""; flex: 1; height: 1px; background: var(--card-edge);
+        }
+
+        .signin-feats { display: flex; flex-direction: column; gap: 10px; margin: 0; padding: 0; list-style: none; }
+        .signin-feats li {
+            display: flex; gap: 10px; align-items: flex-start;
+            font-size: 13px; color: var(--ink-2);
+        }
+        .signin-feats .check { color: var(--terra-500); font-weight: 700; flex-shrink: 0; }
+
+        /* Signed-in mini badge inside the signin-card area
+           (kept for the brief moment between auth and dashboard render) */
         .user-info {
-            display: flex; align-items: center; justify-content: center; gap: 12px;
-            padding: 12px 20px; background: #d4edda; border-radius: 10px;
-            color: #155724; font-size: 14px;
+            display: none; align-items: center; gap: 12px;
+            padding: 14px 16px;
+            background: var(--success-bg);
+            border: 1px solid #C8DCD0;
+            border-radius: var(--r-md);
+            color: var(--forest-700); font-size: 14px;
         }
         .user-info .avatar {
             width: 36px; height: 36px; border-radius: 50%;
-            background: #155724; color: white;
+            background: var(--forest-600); color: var(--paper);
             display: flex; align-items: center; justify-content: center;
             font-weight: 600; font-size: 14px; flex-shrink: 0;
         }
 
-        /* Dashboard */
+        /* ---------- APP SHELL — sidebar + main ---------- */
+        .app-shell {
+            grid-template-columns: 248px 1fr;
+            min-height: 100vh;
+            background: var(--paper);
+        }
+        @media (max-width: 760px) {
+            .app-shell { grid-template-columns: 1fr; }
+            .app-sidebar { border-right: none; border-bottom: 1px solid var(--paper-3); }
+        }
+
+        .app-sidebar {
+            background: var(--paper-2);
+            border-right: 1px solid var(--paper-3);
+            padding: 24px 18px;
+            display: flex; flex-direction: column; gap: 4px;
+        }
+        .app-sidebar .ds-brand { margin: 6px 8px 26px; }
+
+        .nav-item {
+            display: flex; align-items: center; gap: 10px;
+            padding: 10px 12px; border-radius: 8px;
+            font-size: 13.5px; font-weight: 500;
+            color: var(--ink-2);
+            border: none; background: transparent;
+            text-align: left; width: 100%;
+        }
+        .nav-item .ic {
+            width: 8px; height: 8px; border-radius: 50%;
+            background: var(--ink-4); flex-shrink: 0;
+        }
+        .nav-item.active {
+            background: var(--forest-600); color: var(--paper);
+        }
+        .nav-item.active .ic { background: var(--terra-400); }
+
+        .sidebar-foot {
+            margin-top: auto;
+            display: flex; align-items: center; gap: 10px;
+            padding: 12px 8px 4px;
+            border-top: 1px solid var(--paper-3);
+        }
+        .sidebar-avatar {
+            width: 34px; height: 34px; border-radius: 50%;
+            background: linear-gradient(135deg, var(--terra-300), var(--terra-500));
+            color: white;
+            display: grid; place-items: center;
+            font-weight: 600; font-size: 13px;
+            flex-shrink: 0;
+        }
+        .sidebar-user-meta { line-height: 1.25; min-width: 0; flex: 1; }
+        .sidebar-user-meta b {
+            display: block; color: var(--ink); font-weight: 600;
+            font-size: 13px;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .sidebar-user-meta span {
+            color: var(--ink-3); font-size: 11px;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+            display: block;
+        }
+
+        .app-main { padding: 40px 48px 56px; }
+        @media (max-width: 760px) { .app-main { padding: 24px; } }
+
+        .app-topbar {
+            display: flex; align-items: flex-start; justify-content: space-between;
+            gap: 24px; margin-bottom: 32px;
+        }
+        .app-topbar .crumb {
+            font-size: 12px; color: var(--ink-3); margin-bottom: 6px; font-weight: 500;
+        }
+        .app-topbar h1 {
+            font-family: var(--font-serif); font-weight: 400;
+            font-size: clamp(28px, 4vw, 40px);
+            color: var(--ink); margin: 0;
+            letter-spacing: -0.01em;
+        }
+        .app-topbar .lede {
+            font-size: 14px; color: var(--ink-3); margin: 6px 0 0;
+        }
+
+        /* ---------- DASHBOARD ---------- */
         .dashboard { display: none; }
         .dashboard.visible { display: block; }
 
-        .dashboard-header {
-            display: flex; align-items: center; justify-content: space-between;
-            margin-bottom: 16px;
-        }
-        .dashboard-header h2 { font-size: 18px; color: #333; }
-
-        .btn-new-interview {
-            padding: 10px 20px; background: #667eea; color: white;
-            border: none; border-radius: 8px; font-size: 14px; font-weight: 600;
-            cursor: pointer; transition: all 0.2s;
-        }
-        .btn-new-interview:hover {
-            background: #5568d3; transform: translateY(-1px);
-            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        #interviewList {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 16px;
         }
 
-        #interviewList { max-height: 55vh; overflow-y: auto; }
-
+        /* Interview card — restyled but keeps the JS-generated DOM intact:
+           .interview-card > .info > .title (with .badge + .type-chip)
+                                    > .meta (with .view-resume-link)
+                          > .actions */
         .interview-card {
-            display: flex; align-items: center; justify-content: space-between;
-            padding: 14px 16px; border: 1px solid #e9ecef; border-radius: 10px;
-            margin-bottom: 10px; transition: border-color 0.2s;
+            position: relative;
+            display: flex; flex-direction: column; gap: 14px;
+            background: var(--card);
+            border: 1px solid var(--card-edge);
+            border-radius: var(--r-lg);
+            padding: 22px 22px 18px;
+            transition: box-shadow .15s var(--ease), transform .15s var(--ease), border-color .15s var(--ease);
         }
-        .interview-card:hover { border-color: #667eea; }
-
+        .interview-card:hover {
+            box-shadow: var(--shadow-md);
+            border-color: var(--paper-3);
+        }
         .interview-card .info { flex: 1; min-width: 0; }
         .interview-card .title {
-            font-weight: 600; color: #333; font-size: 14px;
-            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+            font-family: var(--font-serif);
+            font-size: 22px; font-weight: 400;
+            line-height: 1.25; color: var(--forest-700);
+            letter-spacing: -0.01em;
+            display: flex; align-items: center; flex-wrap: wrap;
+            row-gap: 6px; column-gap: 8px;
         }
-        .interview-card .meta { font-size: 12px; color: #999; margin-top: 2px; }
+        .interview-card .meta {
+            font-size: 12.5px; color: var(--ink-3);
+            margin-top: 8px; line-height: 1.5;
+        }
 
+        /* Type chip (Resume label) — inline next to title text */
+        .type-chip {
+            display: inline-flex; align-items: center;
+            font-family: var(--font-mono);
+            font-size: 10px; font-weight: 600; letter-spacing: 0.06em;
+            background: var(--terra-50); color: var(--terra-700);
+            padding: 3px 8px; border-radius: 999px;
+            text-transform: uppercase;
+            line-height: 1;
+        }
+
+        /* Status badge — flows inline after the title */
         .badge {
-            display: inline-block; padding: 2px 8px; border-radius: 4px;
-            font-size: 11px; font-weight: 600; text-transform: uppercase; margin-left: 8px;
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 4px 10px; border-radius: 999px;
+            font-family: var(--font-mono);
+            font-size: 10px; font-weight: 600;
+            letter-spacing: 0.06em; text-transform: uppercase;
+            line-height: 1;
+            margin-left: auto;  /* push badge to the right within the flex row */
         }
-        .badge.created { background: #e9ecef; color: #666; }
-        .badge.in_progress { background: #fff3cd; color: #856404; }
-        .badge.completed { background: #d4edda; color: #155724; }
-        .badge.generating_report { background: #d1ecf1; color: #0c5460; animation: pulse-badge 1.5s ease-in-out infinite; }
-        @keyframes pulse-badge { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        .badge::before {
+            content: ""; display: inline-block;
+            width: 6px; height: 6px; border-radius: 50%;
+            flex-shrink: 0;
+        }
+        .badge.created { background: var(--paper-2); color: var(--ink-2); }
+        .badge.created::before { background: var(--ink-3); }
+        .badge.in_progress { background: var(--terra-50); color: var(--terra-600); }
+        .badge.in_progress::before { background: var(--terra-500); animation: ds-pulse 1.6s infinite; }
+        .badge.completed { background: var(--success-bg); color: var(--success); }
+        .badge.completed::before { background: var(--success); }
+        .badge.generating_report { background: var(--warning-bg); color: var(--warning); }
+        .badge.generating_report::before { background: var(--warning); animation: ds-pulse 1.6s infinite; }
 
-        .interview-card .actions { display: flex; gap: 8px; flex-shrink: 0; margin-left: 12px; }
+        .view-resume-link {
+            font-size: 12px; color: var(--terra-600);
+            text-decoration: underline; text-decoration-thickness: 1px;
+            text-underline-offset: 2px;
+            margin-left: 6px; white-space: nowrap;
+        }
+        .view-resume-link:hover { color: var(--terra-700); }
 
+        .interview-card .actions {
+            display: flex; gap: 8px;
+            padding-top: 12px;
+            border-top: 1px dashed var(--card-edge);
+        }
+        /* JS-generated buttons inside .actions */
         .btn-sm {
-            padding: 6px 14px; border: none; border-radius: 6px;
-            font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s;
+            display: inline-flex; align-items: center; justify-content: center;
+            padding: 8px 16px; border-radius: 8px;
+            font-size: 12.5px; font-weight: 600;
+            border: none; cursor: pointer;
+            font-family: var(--font-sans);
+            transition: transform .12s var(--ease), background .15s var(--ease);
+            flex: 1;
         }
-        .btn-sm:hover { transform: translateY(-1px); box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
-        .btn-start { background: #28a745; color: white; }
-        .btn-start:hover { background: #218838; }
-        .btn-report { background: #667eea; color: white; }
-        .btn-report:hover { background: #5568d3; }
+        .btn-sm:hover { transform: translateY(-1px); }
+        .btn-start { background: var(--forest-600); color: var(--paper); }
+        .btn-start:hover { background: var(--forest-700); }
+        .btn-report { background: var(--terra-500); color: white; }
+        .btn-report:hover { background: var(--terra-600); }
 
-        .empty-state { text-align: center; color: #999; padding: 30px 0; font-size: 14px; }
+        .empty-state {
+            grid-column: 1 / -1;
+            text-align: center;
+            padding: 64px 24px;
+            background: var(--card);
+            border: 1px dashed var(--card-edge);
+            border-radius: var(--r-lg);
+            color: var(--ink-3);
+            font-size: 14px;
+        }
 
-        /* Modal */
+        /* ---------- "+ NEW INTERVIEW" BUTTON ---------- */
+        .btn-new-interview {
+            display: inline-flex; align-items: center; gap: 8px;
+            padding: 11px 20px;
+            background: var(--forest-600); color: var(--paper);
+            border: none; border-radius: 10px;
+            font-size: 13.5px; font-weight: 600;
+            cursor: pointer;
+            transition: transform .12s var(--ease), background .15s var(--ease), box-shadow .15s var(--ease);
+            font-family: var(--font-sans);
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+        .btn-new-interview:hover {
+            background: var(--forest-700);
+            transform: translateY(-1px);
+            box-shadow: var(--shadow-md);
+        }
+
+        /* ---------- MODAL ---------- */
         .modal-overlay {
             display: none; position: fixed; inset: 0; z-index: 900;
-            background: rgba(0, 0, 0, 0.5); backdrop-filter: blur(4px);
+            background: rgba(15, 31, 26, 0.55);
+            backdrop-filter: blur(6px);
             align-items: center; justify-content: center;
+            padding: 24px;
         }
         .modal-overlay.visible { display: flex; }
 
         .modal-card {
-            background: white; border-radius: 20px; padding: 32px;
-            max-width: 560px; width: 90%; max-height: 85vh; overflow-y: auto;
-            box-shadow: 0 25px 80px rgba(0, 0, 0, 0.3);
-            animation: slideUp 0.3s ease-out;
+            background: var(--card);
+            border: 1px solid var(--card-edge);
+            border-radius: var(--r-xl);
+            width: 100%; max-width: 560px;
+            max-height: 88vh; overflow-y: auto;
+            box-shadow: var(--shadow-xl);
+            animation: ds-fade-up .3s var(--ease);
         }
+        .modal-card.ds-scroll { /* scrollbar styling from design system */ }
+
         .modal-header {
-            display: flex; align-items: center; justify-content: space-between;
-            margin-bottom: 20px;
+            display: flex; align-items: flex-start; justify-content: space-between;
+            gap: 16px;
+            padding: 24px 28px 18px;
+            border-bottom: 1px solid var(--card-edge);
         }
-        .modal-header h2 { font-size: 20px; color: #333; }
+        .modal-header h2 {
+            font-family: var(--font-serif); font-weight: 400;
+            font-size: 26px; color: var(--ink);
+            margin: 0; letter-spacing: -0.01em;
+        }
         .modal-close {
-            background: none; border: none; font-size: 28px; color: #999;
-            cursor: pointer; padding: 0 4px; line-height: 1;
+            background: var(--paper-2); border: 1px solid var(--card-edge);
+            width: 32px; height: 32px; border-radius: 50%;
+            font-size: 18px; line-height: 1; color: var(--ink-2);
+            cursor: pointer; flex-shrink: 0;
+            display: grid; place-items: center;
+            transition: background .15s var(--ease);
         }
-        .modal-close:hover { color: #333; }
+        .modal-close:hover { background: var(--paper-3); color: var(--ink); }
 
-        /* Form */
-        .form-group { margin-bottom: 20px; }
-        .form-group label { display: block; margin-bottom: 6px; font-weight: 600; color: #333; font-size: 14px; }
-        .form-group label .required { color: #e74c3c; }
-
-        .form-group input,
-        .form-group textarea,
-        .form-group select {
-            width: 100%; padding: 10px 14px; border: 2px solid #e9ecef;
-            border-radius: 8px; font-size: 14px; font-family: inherit;
-            transition: border-color 0.2s; background: white;
-        }
-        .form-group input:focus,
-        .form-group textarea:focus,
-        .form-group select:focus { outline: none; border-color: #667eea; }
-        .form-group textarea { min-height: 140px; resize: vertical; }
-        .form-group .hint { font-size: 12px; color: #999; margin-top: 4px; }
-
-        .submit-btn {
-            width: 100%; padding: 14px; background: #667eea; color: white;
-            border: none; border-radius: 8px; font-size: 16px; font-weight: 600;
-            cursor: pointer; transition: all 0.3s;
-        }
-        .submit-btn:hover:not(:disabled) {
-            background: #5568d3; transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
-        }
-        .submit-btn:disabled { background: #b0b8d6; cursor: not-allowed; transform: none; }
-
-        .status {
-            padding: 12px; border-radius: 8px; margin-bottom: 20px;
-            text-align: center; font-size: 14px; display: none;
-        }
-        .status.visible { display: block; }
-        .status.error { background: #f8d7da; color: #721c24; }
-        .status.success { background: #d4edda; color: #155724; }
-
-        /* Loading overlay */
-        .loading-overlay {
-            display: none; position: fixed; inset: 0; z-index: 1000;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            align-items: center; justify-content: center; flex-direction: column;
-        }
-        .loading-overlay.visible { display: flex; }
-
-        .loading-card {
-            background: white; border-radius: 24px; padding: 48px 40px;
-            max-width: 480px; width: 90%; text-align: center;
-            box-shadow: 0 25px 80px rgba(0,0,0,0.3);
-            animation: slideUp 0.5s ease-out;
-        }
-        @keyframes slideUp {
-            from { opacity: 0; transform: translateY(30px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-
-        .loading-brand {
-            font-size: 12px; font-weight: 600; color: #667eea;
-            letter-spacing: 2px; text-transform: uppercase; margin-bottom: 24px;
-        }
-
-        .loading-spinner {
-            width: 56px; height: 56px; margin: 0 auto 28px;
-            border: 4px solid #e9ecef;
-            border-top-color: #667eea; border-right-color: #764ba2;
-            border-radius: 50%; animation: spin 1s linear infinite;
-        }
-        @keyframes spin { to { transform: rotate(360deg); } }
-
-        .loading-title { font-size: 20px; font-weight: 700; color: #333; margin-bottom: 20px; }
-
-        .loading-message {
-            font-size: 16px; color: #667eea; font-weight: 500;
-            min-height: 28px; margin-bottom: 24px;
-            transition: opacity 0.5s ease-in-out;
-        }
-        .loading-message.fade-out { opacity: 0; }
-
-        .loading-footer { font-size: 12px; color: #bbb; }
-
-        /* Mode banner (fresher nudge) */
+        /* Mode banner — restyled with terracotta accent */
         .mode-banner {
             display: flex; align-items: center; gap: 12px;
-            padding: 12px 14px; background: #f4f6ff;
-            border: 1px solid #d6dbff; border-radius: 10px;
-            margin-bottom: 18px; font-size: 13px; color: #3a3f66;
+            margin: 20px 28px 0;
+            padding: 12px 14px;
+            background: var(--terra-50);
+            border: 1px solid var(--terra-100);
+            border-radius: var(--r-md);
+            font-size: 13px; color: var(--terra-700);
+            line-height: 1.5;
         }
         .mode-banner .icon {
-            flex-shrink: 0; width: 28px; height: 28px; border-radius: 8px;
-            background: #667eea; color: white;
-            display: flex; align-items: center; justify-content: center;
-            font-weight: 700; font-size: 14px;
+            flex-shrink: 0;
+            width: 28px; height: 28px;
+            border-radius: 8px;
+            background: var(--terra-500); color: white;
+            display: grid; place-items: center;
+            font-family: var(--font-serif);
+            font-size: 16px;
         }
-        .mode-banner .copy { flex: 1; line-height: 1.4; }
-        .mode-banner .copy strong { color: #333; }
+        .mode-banner .copy { flex: 1; }
+        .mode-banner .copy strong { color: var(--terra-700); font-weight: 700; }
         .mode-banner .switch-link {
-            color: #667eea; font-weight: 600; cursor: pointer;
-            text-decoration: none; white-space: nowrap;
+            color: var(--terra-600); font-weight: 600;
+            cursor: pointer; text-decoration: none;
+            white-space: nowrap;
         }
         .mode-banner .switch-link:hover { text-decoration: underline; }
 
-        /* Segmented mode toggle */
-        .mode-toggle {
-            display: grid; grid-template-columns: 1fr 1fr; gap: 4px;
-            padding: 4px; background: #f1f3f9; border-radius: 10px;
-            margin-bottom: 20px;
+        /* Status message inside modal */
+        .status {
+            display: none;
+            margin: 16px 28px 0;
+            padding: 11px 14px;
+            border-radius: var(--r-md);
+            font-size: 13px; text-align: center;
         }
-        .mode-toggle button {
-            padding: 10px 12px; border: none; background: transparent;
-            color: #667; font-size: 13px; font-weight: 600; cursor: pointer;
-            border-radius: 8px; transition: all 0.2s;
+        .status.visible { display: block; }
+        .status.error   { background: var(--error-bg); color: var(--error); border: 1px solid #ECC4BC; }
+        .status.success { background: var(--success-bg); color: var(--success); border: 1px solid #C8DCD0; }
+
+        /* Form wrapper inside modal */
+        #interviewForm { padding: 20px 28px 28px; }
+
+        /* Form fields — restyled (preserving original .form-group structure) */
+        .form-group { margin-bottom: 16px; }
+        .form-group label {
+            display: block; margin-bottom: 6px;
+            font-weight: 600; font-size: 12.5px;
+            color: var(--ink-2);
         }
-        .mode-toggle button.active {
-            background: white; color: #333;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        .form-group label .required { color: var(--terra-600); margin-left: 2px; }
+        .form-group input,
+        .form-group textarea,
+        .form-group select {
+            width: 100%;
+            background: var(--paper);
+            border: 1px solid var(--card-edge);
+            border-radius: 10px;
+            padding: 11px 14px;
+            font-size: 14px; color: var(--ink);
+            font-family: var(--font-sans);
+            outline: none;
+            transition: border-color .15s var(--ease), box-shadow .15s var(--ease);
         }
-        .mode-toggle button:not(.active):hover { color: #333; }
+        .form-group input::placeholder,
+        .form-group textarea::placeholder { color: var(--ink-4); }
+        .form-group input:focus,
+        .form-group textarea:focus,
+        .form-group select:focus {
+            border-color: var(--forest-500);
+            box-shadow: 0 0 0 3px rgba(46, 92, 70, 0.12);
+        }
+        .form-group textarea { min-height: 130px; resize: vertical; line-height: 1.5; }
+        .form-group select {
+            appearance: none; -webkit-appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%236B7670' d='M6 8L0 0h12z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 14px center;
+            padding-right: 36px;
+        }
+        .form-group .hint {
+            font-size: 11.5px; color: var(--ink-3);
+            margin-top: 4px;
+        }
+
+        /* Submit button */
+        .submit-btn {
+            width: 100%;
+            padding: 13px 16px;
+            background: var(--forest-600); color: var(--paper);
+            border: none; border-radius: 10px;
+            font-size: 14.5px; font-weight: 600;
+            cursor: pointer;
+            font-family: var(--font-sans);
+            margin-top: 8px;
+            transition: background .15s var(--ease), transform .12s var(--ease), box-shadow .15s var(--ease);
+        }
+        .submit-btn:hover:not(:disabled) {
+            background: var(--forest-700);
+            transform: translateY(-1px);
+            box-shadow: var(--shadow-md);
+        }
+        .submit-btn:disabled {
+            background: var(--ink-4); cursor: not-allowed;
+            transform: none;
+        }
 
         /* Resume mode info box */
         .info-box {
-            padding: 12px 14px; background: #fff8e6;
-            border: 1px solid #f5e0a8; border-radius: 10px;
-            margin-bottom: 18px; font-size: 12px; color: #6b5b1e;
+            margin-bottom: 18px;
+            padding: 12px 14px;
+            background: var(--warning-bg);
+            border: 1px solid #EBD8A2;
+            border-radius: var(--r-md);
+            font-size: 12.5px;
+            color: #6B5618;
             line-height: 1.5;
         }
-        .info-box strong { color: #4a3f10; }
+        .info-box strong { color: #4A3F10; font-weight: 700; }
 
-        /* File input */
-        .file-input-wrapper {
-            position: relative; display: flex; align-items: center; gap: 12px;
-            padding: 14px; border: 2px dashed #c8cee8; border-radius: 10px;
-            background: #fafbff; cursor: pointer; transition: border-color 0.2s;
+        /* Mode toggle — segmented buttons (kept selector for any inline styling) */
+        .mode-toggle {
+            display: grid; grid-template-columns: 1fr 1fr; gap: 4px;
+            padding: 4px;
+            background: var(--paper-2);
+            border-radius: var(--r-md);
+            margin-bottom: 18px;
         }
-        .file-input-wrapper:hover { border-color: #667eea; }
+        .mode-toggle button {
+            padding: 10px 12px;
+            border: none; background: transparent;
+            color: var(--ink-2);
+            font-size: 13px; font-weight: 600;
+            cursor: pointer;
+            border-radius: 8px;
+            transition: all .15s var(--ease);
+        }
+        .mode-toggle button.active {
+            background: var(--card); color: var(--forest-600);
+            box-shadow: var(--shadow-sm);
+        }
+
+        /* File input drop zone */
+        .file-input-wrapper {
+            position: relative;
+            display: flex; align-items: center; gap: 12px;
+            padding: 16px;
+            border: 1.5px dashed var(--card-edge);
+            border-radius: var(--r-md);
+            background: var(--paper);
+            cursor: pointer;
+            transition: border-color .15s var(--ease), background .15s var(--ease);
+        }
+        .file-input-wrapper:hover {
+            border-color: var(--forest-500);
+            background: var(--card);
+        }
         .file-input-wrapper input[type=file] {
             position: absolute; inset: 0; opacity: 0; cursor: pointer;
         }
         .file-input-wrapper .file-icon {
-            width: 36px; height: 36px; border-radius: 8px;
-            background: #667eea; color: white;
-            display: flex; align-items: center; justify-content: center;
-            font-size: 16px; font-weight: 700; flex-shrink: 0;
+            width: 40px; height: 40px;
+            border-radius: 10px;
+            background: var(--forest-50); color: var(--forest-600);
+            display: grid; place-items: center;
+            font-family: var(--font-mono);
+            font-size: 11px; font-weight: 700;
+            flex-shrink: 0;
         }
         .file-input-wrapper .file-text {
-            flex: 1; font-size: 13px; color: #555; min-width: 0;
+            flex: 1; font-size: 13px; color: var(--ink-2); min-width: 0;
         }
-        .file-input-wrapper .file-text .primary { font-weight: 600; color: #333; }
-        .file-input-wrapper .file-text .secondary { color: #999; font-size: 12px; margin-top: 2px; }
-        .file-input-wrapper.has-file .file-text .primary {
-            color: #155724; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        .file-input-wrapper .file-text .primary {
+            font-weight: 600; color: var(--ink);
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
         }
+        .file-input-wrapper .file-text .secondary {
+            font-family: var(--font-mono);
+            color: var(--ink-3); font-size: 11px; margin-top: 3px;
+        }
+        .file-input-wrapper.has-file {
+            border-style: solid;
+            background: var(--card);
+            border-color: var(--forest-300);
+        }
+        .file-input-wrapper.has-file .file-icon {
+            background: var(--forest-600); color: var(--paper);
+        }
+        .file-input-wrapper.has-file .file-text .primary { color: var(--forest-600); }
 
-        /* Resume-based card badge + link */
-        .type-chip {
-            display: inline-block; padding: 2px 8px; border-radius: 4px;
-            font-size: 10px; font-weight: 700; letter-spacing: 0.4px;
-            background: #eef1ff; color: #4b55a3; margin-left: 6px;
+        .mode-panel[hidden] { display: none; }
+
+        /* ---------- LOADING OVERLAY ---------- */
+        .loading-overlay {
+            display: none; position: fixed; inset: 0; z-index: 1000;
+            align-items: center; justify-content: center;
+            background:
+              radial-gradient(900px 500px at 50% -100px, rgba(212, 98, 58, 0.18), transparent 60%),
+              linear-gradient(180deg, var(--forest-700), var(--forest-800));
+            padding: 24px;
+        }
+        .loading-overlay.visible { display: flex; }
+
+        .loading-card {
+            text-align: center;
+            max-width: 520px; width: 100%;
+            color: var(--paper);
+            animation: ds-fade-up .5s var(--ease);
+        }
+        .loading-brand {
+            font-family: var(--font-mono);
+            font-size: 11px; letter-spacing: 0.18em;
+            color: var(--terra-300); text-transform: uppercase;
+            margin-bottom: 28px;
+        }
+        .loading-spinner {
+            width: 64px; height: 64px;
+            margin: 0 auto 28px;
+            border-radius: 50%;
+            border: 3px solid rgba(247, 244, 236, 0.18);
+            border-top-color: var(--terra-300);
+            border-right-color: var(--terra-300);
+            animation: ds-spin 1.1s linear infinite;
+        }
+        .loading-title {
+            font-family: var(--font-serif);
+            font-size: 36px; font-weight: 400;
+            letter-spacing: -0.01em;
+            margin-bottom: 14px;
+        }
+        .loading-message {
+            font-size: 15px;
+            color: rgba(247, 244, 236, 0.78);
+            min-height: 28px;
+            margin-bottom: 32px;
+            transition: opacity .5s ease-in-out;
+            line-height: 1.5;
+        }
+        .loading-message.fade-out { opacity: 0; }
+        .loading-footer {
+            font-family: var(--font-mono);
+            font-size: 11px; letter-spacing: 0.08em;
+            color: rgba(247, 244, 236, 0.5);
             text-transform: uppercase;
         }
-        .view-resume-link {
-            font-size: 12px; color: #667eea; text-decoration: none;
-            margin-left: 8px; white-space: nowrap;
-        }
-        .view-resume-link:hover { text-decoration: underline; }
-
-        /* Hide helpers */
-        .mode-panel[hidden] { display: none; }
     </style>
 </head>
 <body>
-    <!-- Loading overlay -->
+    <!-- ===================================================================
+         LOADING OVERLAY (full-screen during interview generation)
+         =================================================================== -->
     <div id="loadingOverlay" class="loading-overlay">
         <div class="loading-card">
             <div class="loading-brand">26Pixel</div>
             <div class="loading-spinner"></div>
-            <div class="loading-title">Preparing Your Interview</div>
+            <div class="loading-title">Crafting your interview</div>
             <div id="loadingMessage" class="loading-message">Brewing the perfect questions...</div>
-            <div class="loading-footer">This usually takes 15-30 seconds</div>
+            <div class="loading-footer">Usually 15–30 seconds</div>
         </div>
     </div>
 
-    <!-- Create interview modal -->
+    <!-- ===================================================================
+         CREATE INTERVIEW MODAL
+         =================================================================== -->
     <div id="createModal" class="modal-overlay">
-        <div class="modal-card">
+        <div class="modal-card ds-scroll">
             <div class="modal-header">
-                <h2>New Interview</h2>
-                <button class="modal-close" onclick="closeCreateModal()">&times;</button>
+                <div>
+                    <h2>New interview</h2>
+                </div>
+                <button class="modal-close" onclick="closeCreateModal()" aria-label="Close">&times;</button>
             </div>
+
             <div id="statusMsg" class="status"></div>
 
             <!-- Mode-aware nudge — doubles as the mode switcher -->
@@ -346,16 +701,16 @@
                 <!-- Job Description mode -->
                 <div id="panelJd" class="mode-panel">
                     <div class="form-group">
-                        <label>Job Title <span class="required">*</span></label>
+                        <label>Job title <span class="required">*</span></label>
                         <input type="text" id="jobTitle" maxlength="200" placeholder="e.g. Senior Backend Engineer">
                     </div>
                     <div class="form-group">
-                        <label>Job Description <span class="required">*</span></label>
+                        <label>Job description <span class="required">*</span></label>
                         <textarea id="jobDescription" maxlength="50000" placeholder="Paste the full job description here..."></textarea>
-                        <div class="hint">Include required skills, experience, and responsibilities for best results</div>
+                        <div class="hint">Include required skills, experience, and responsibilities for best results.</div>
                     </div>
                     <div class="form-group">
-                        <label>Difficulty Level</label>
+                        <label>Difficulty level</label>
                         <select id="difficultyLevel">
                             <option value="junior">Junior</option>
                             <option value="intermediate" selected>Intermediate</option>
@@ -378,16 +733,16 @@
                             <div class="file-icon">PDF</div>
                             <div class="file-text">
                                 <div class="primary" id="fileName">Click to choose a PDF</div>
-                                <div class="secondary">Max 5 MB &middot; PDF only</div>
+                                <div class="secondary">Max 5 MB · PDF only</div>
                             </div>
                             <input type="file" id="resumeFile" accept="application/pdf,.pdf">
                         </label>
                     </div>
 
                     <div class="form-group">
-                        <label>Career Field <span class="required">*</span></label>
+                        <label>Career field <span class="required">*</span></label>
                         <select id="targetField">
-                            <option value="" disabled selected>Choose a field...</option>
+                            <option value="" disabled selected>Choose a field…</option>
                         </select>
                         <div class="hint">Questions will be anchored to this field — pick what matches your goal.</div>
                     </div>
@@ -398,38 +753,99 @@
                     </div>
                 </div>
 
-                <button type="submit" class="submit-btn" id="submitBtn">Create Interview</button>
+                <button type="submit" class="submit-btn" id="submitBtn">Generate interview &rarr;</button>
             </form>
         </div>
     </div>
 
-    <div class="container">
-        <div class="brand">26Pixel</div>
-        <h1>AI Technical Interviewer</h1>
-        <p class="subtitle">Real-time conversation with an AI interviewer</p>
+    <!-- ===================================================================
+         AUTH SHELL — visible until #signinPrompt is hidden by JS
+         =================================================================== -->
+    <div class="auth-shell">
+        <div class="auth-hero">
+            <div class="ds-brand"><span class="ds-brand-mark"></span>26Pixel</div>
+            <div style="margin-top: auto;">
+                <div class="auth-eyebrow">Practice interviews · Honest feedback</div>
+                <h1 class="auth-headline">The interview that <em>feels</em> like a&nbsp;conversation.</h1>
+                <p class="auth-sub">Realistic mock interviews from your resume or a job description. Live transcript, structured feedback, and a report you can act on — in under twenty minutes.</p>
+            </div>
+            <div class="auth-hero-foot">
+                <a href="#">Privacy</a>
+                <a href="#">Terms</a>
+                <a href="#">Contact</a>
+                <span class="spacer">© 2026 26Pixel Labs</span>
+            </div>
+        </div>
 
-        <!-- Google Sign-In -->
-        <div class="signin-section">
-            <div id="signinPrompt">
-                <p>Sign in with your Google account to get started</p>
-                <div id="g_id_onload_container">
-                    <div id="g_id_signin"></div>
+        <div class="auth-aside">
+            <div class="signin-card">
+                <h2>Welcome.</h2>
+                <p class="signin-blurb">Sign in to continue. We'll keep your interviews and reports tied to your account.</p>
+
+                <!-- Sign-in: Google rendered button + post-auth confirmation badge -->
+                <div id="signinPrompt">
+                    <div id="g_id_onload_container">
+                        <div id="g_id_signin"></div>
+                    </div>
+                </div>
+                <div id="userInfo" class="user-info">
+                    <div class="avatar" id="userAvatar"></div>
+                    <span id="userDisplay"></span>
+                </div>
+
+                <div class="signin-divider">What's inside</div>
+
+                <ul class="signin-feats">
+                    <li><span class="check">&check;</span> Resume-driven question generation</li>
+                    <li><span class="check">&check;</span> Live voice + on-screen transcript</li>
+                    <li><span class="check">&check;</span> Detailed scored report after each session</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===================================================================
+         APP SHELL — visible after sign-in (CSS :has driven, no JS change)
+         =================================================================== -->
+    <div class="app-shell">
+        <aside class="app-sidebar">
+            <div class="ds-brand"><span class="ds-brand-mark"></span>26Pixel</div>
+            <button class="nav-item active"><span class="ic"></span>Interviews</button>
+
+            <!-- User badge anchored to bottom of sidebar.
+                 Uses #userAvatar / #userDisplay (JS-targeted) duplicated here
+                 via re-parenting? No — we instead mirror values via DOM order.
+                 The JS-touched #userInfo lives in the auth shell (above) for the
+                 brief auth state; once the dashboard is up, the sidebar shows
+                 the user via duplicate spans below. To avoid duplicate-id, this
+                 sidebar version uses different IDs and is updated by JS only
+                 if those IDs exist. We keep the original IDs intact above. -->
+            <div class="sidebar-foot" id="sidebarUser" hidden>
+                <div class="sidebar-avatar" id="sidebarAvatar"></div>
+                <div class="sidebar-user-meta">
+                    <b id="sidebarName"></b>
+                    <span id="sidebarEmail"></span>
                 </div>
             </div>
-            <div id="userInfo" class="user-info" style="display: none;">
-                <div class="avatar" id="userAvatar"></div>
-                <span id="userDisplay"></span>
-            </div>
-        </div>
+        </aside>
 
-        <!-- Dashboard -->
-        <div id="dashboard" class="dashboard">
-            <div class="dashboard-header">
-                <h2>Your Interviews</h2>
-                <button class="btn-new-interview" onclick="openCreateModal()">+ New Interview</button>
+        <main class="app-main">
+            <header class="app-topbar">
+                <div>
+                    <div class="crumb">Workspace</div>
+                    <h1>Your interviews</h1>
+                    <p class="lede">Pick up where you left off — or start a fresh one.</p>
+                </div>
+                <button class="btn-new-interview" onclick="openCreateModal()">
+                    <span aria-hidden="true">+</span> New interview
+                </button>
+            </header>
+
+            <!-- Dashboard root — JS toggles .visible on this -->
+            <div id="dashboard" class="dashboard">
+                <div id="interviewList"></div>
             </div>
-            <div id="interviewList"></div>
-        </div>
+        </main>
     </div>
 
     <script>
@@ -489,6 +905,15 @@
             document.getElementById('userInfo').style.display = 'flex';
             document.getElementById('userAvatar').textContent = userName.charAt(0).toUpperCase();
             document.getElementById('userDisplay').textContent = userName + ' (' + userEmail + ')';
+
+            // Mirror identity into the sidebar (UI only — does not affect logic)
+            var sidebarEl = document.getElementById('sidebarUser');
+            if (sidebarEl) {
+                sidebarEl.hidden = false;
+                document.getElementById('sidebarAvatar').textContent = userName.charAt(0).toUpperCase();
+                document.getElementById('sidebarName').textContent = userName;
+                document.getElementById('sidebarEmail').textContent = userEmail;
+            }
 
             await loadDashboard();
         }
@@ -631,12 +1056,12 @@
                 html: "<strong>Prepping for campus placements or an entry-level role?</strong> " +
                       "Upload your resume and we'll tailor questions to a junior role in your field — " +
                       "no job description needed.",
-                linkText: "Upload resume \u2192"
+                linkText: "Upload resume →"
             },
             resume: {
                 html: "<strong>Have a specific job description in mind?</strong> " +
                       "Switch back for a more customised technical interview tailored to that exact role.",
-                linkText: "Use job description \u2192"
+                linkText: "Use job description →"
             }
         };
 
