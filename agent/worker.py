@@ -304,37 +304,50 @@ class RealtimeInterviewAgent:
             try:
                 from livekit.plugins import hedra
 
+                if not settings.HEDRA_API_KEY:
+                    logger.error("HEDRA_API_KEY is not set — interviewer will have no video")
+                    raise RuntimeError("HEDRA_API_KEY missing")
+
                 avatar_kwargs = {
                     "avatar_participant_name": "technical-interviewer",
                     "api_key": settings.HEDRA_API_KEY,
                     "api_url": "https://api.hedra.com/public/livekit/v1/session",
                 }
 
-                if StringUtils.looks_like_uuid(self.session.avatar_id) and self.session.avatar_id.strip():
-                    avatar_kwargs["avatar_id"] = self.session.avatar_id.strip()
+                # Prefer a stored Hedra avatar UUID if we have one. Otherwise (the common
+                # path), fall back to uploading the bundled PIL Image — that flow doesn't
+                # depend on the asset/avatar pre-creation API which has shifted upstream.
+                stored_avatar_id = self.session.avatar_id
+                if StringUtils.looks_like_uuid(stored_avatar_id) and stored_avatar_id.strip():
+                    avatar_kwargs["avatar_id"] = stored_avatar_id.strip()
+                    logger.info(f"Hedra avatar_id (UUID) provided: {avatar_kwargs['avatar_id']}")
                 else:
-                    avatar_image_path = getattr(self.session, "avatar_image_path", None)
-                    if not avatar_image_path:
-                        avatar_image_path = _default_avatar_image_path()
+                    if stored_avatar_id is not None:
+                        logger.info(
+                            f"Stored avatar_id is not a UUID ({stored_avatar_id!r}); "
+                            "falling back to avatar_image"
+                        )
+                    avatar_image_path = getattr(self.session, "avatar_image_path", None) or _default_avatar_image_path()
                     try:
                         from PIL import Image
                         if Path(avatar_image_path).exists():
                             avatar_kwargs["avatar_image"] = Image.open(avatar_image_path)
+                            logger.info(f"Hedra avatar_image loaded from {avatar_image_path}")
                         else:
-                            logger.warning(f"Avatar image not found at {avatar_image_path}")
-                    except Exception as e:
-                        logger.warning(f"Could not load avatar image: {e}")
+                            logger.error(f"Avatar image not found at {avatar_image_path} — Hedra cannot start")
+                    except Exception:
+                        logger.exception(f"Could not load avatar image from {avatar_image_path}")
 
                 if "avatar_id" in avatar_kwargs or "avatar_image" in avatar_kwargs:
                     self.hedra_avatar = hedra.AvatarSession(**avatar_kwargs)
                     logger.info("Hedra avatar configured")
                 else:
-                    logger.warning("No valid avatar; skipping Hedra")
+                    logger.error("No avatar_id or avatar_image available — skipping Hedra (no video)")
 
             except ImportError:
                 logger.warning("Hedra plugin not available, running without avatar video")
-            except Exception as e:
-                logger.warning(f"Could not configure Hedra avatar: {e}")
+            except Exception:
+                logger.exception("Could not configure Hedra avatar")
 
             # Start agent session
             logger.info(f"[{self.ctx.room.name}] Starting agent session...")
@@ -346,8 +359,9 @@ class RealtimeInterviewAgent:
                 try:
                     await self.hedra_avatar.start(self.agent_session, room=self.ctx.room)
                     logger.info("Hedra avatar started")
-                except Exception as e:
-                    logger.warning(f"Could not start Hedra avatar: {e}")
+                except Exception:
+                    logger.exception("Could not start Hedra avatar — interview will run audio-only")
+                    self.hedra_avatar = None
 
             # Start interview + time limit
             self.session.start_interview()

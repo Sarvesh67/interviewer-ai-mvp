@@ -224,8 +224,9 @@
             pointer-events: none;
             transition: opacity .3s var(--ease);
         }
-        .video-box:has(video[srcobject]):before,
-        .video-box:has(video[src]):before { opacity: 0; }
+        /* Hide the monogram once a track is attached — driven from JS via .has-track,
+           because srcObject is a JS property and `:has(video[srcobject])` never matches. */
+        .video-box.has-track::before { opacity: 0; }
         #remoteVideoBox { background: linear-gradient(135deg, var(--terra-700), var(--forest-700)); }
         #remoteVideoBox::before { color: rgba(247, 244, 236, 0.7); }
 
@@ -769,6 +770,7 @@
 
                     if (track.kind === 'video' && isInterviewer) {
                         track.attach(remoteVideo);
+                        document.getElementById('remoteVideoBox').classList.add('has-track');
                         showStatus('Interview in progress', 'connected');
                     } else if (track.kind === 'audio') {
                         var audioEl = document.createElement('audio');
@@ -783,6 +785,9 @@
 
                 room.on(RoomEvent.TrackUnsubscribed, function(track, publication, participant) {
                     track.detach();
+                    if (track.kind === 'video') {
+                        document.getElementById('remoteVideoBox').classList.remove('has-track');
+                    }
                     if (track.kind === 'audio' && remoteAudioEl) {
                         remoteAudioEl.pause();
                         remoteAudioEl.remove();
@@ -845,6 +850,7 @@
                     await room.localParticipant.publishTrack(localTracks[i]);
                     if (localTracks[i].kind === 'video') {
                         localTracks[i].attach(localVideo);
+                        document.getElementById('localVideoBox').classList.add('has-track');
                     }
                 }
 
